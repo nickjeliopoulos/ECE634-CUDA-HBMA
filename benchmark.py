@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import torch.utils
 import torch.utils.benchmark as bench
 import torchvision
@@ -7,20 +6,9 @@ import argparse
 from PIL import Image
 from typing import *
 import matplotlib.pyplot as plt
-# from ece634_cuda_hbma import hbma_v0, hbma_v1
-
-
-###
-### Utilities, Loss, and other Metrics
-###
-def PSNR(source, target) -> float:
-	### Numerical stability (what if mse = 0?)
-	epsilon = 1e-9
-	### Compute Mean Squared Error (MSE), max pixel value (255.0 or 1.0 depending on how the image is loaded)
-	mse = torch.mean((source - target) ** 2)
-	max_pixel = torch.max(target)
-	psnr = 20 * torch.log10(max_pixel / (torch.sqrt(mse) + epsilon))
-	return psnr
+from hbma.torch_naive_hbma import HBMA_Naive
+from hbma.torch_fused_cuda_hbma import HBMA_CUDA_Fused
+from hbma.utils import loss_PSNR
 
 
 ### Benchmark Function
@@ -43,6 +31,7 @@ def benchmark_N_iterations(
 
 def main(args: argparse.Namespace) -> None:
 	### Initialize transforms
+	### Point is to standardize the input size
 	transform = torchvision.transforms.Compose([
 		torchvision.transforms.ToTensor(),
 		torchvision.transforms.CenterCrop((256, 256)),
@@ -53,9 +42,9 @@ def main(args: argparse.Namespace) -> None:
 	anchor_image = Image.open(args.anchor_image_path)
 	target_image = Image.open(args.target_image_path)
 
-	### Channels-Last Format (H, W, C)
-	anchor_tensor = transform(anchor_image).permute(1, 2, 0).contiguous()
-	target_tensor = transform(target_image).permute(1, 2, 0).contiguous()
+	### Channels-Last Format (N=1, H, W, C)
+	anchor_tensor = transform(anchor_image).permute(1, 2, 0).unsqueeze(0).contiguous()
+	target_tensor = transform(target_image).permute(1, 2, 0).unsqueeze(0).contiguous()
 
 	print(f"Anchor Tensor Shape: {anchor_tensor.shape}")
 	print(f"Target Tensor Shape: {target_tensor.shape}")
