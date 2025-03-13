@@ -49,6 +49,7 @@ class HBMA_CUDA_Fused(nn.Module):
 
 	###
 	### Invoke custom CUDA kernel
+	### TODO: Implement hbma_v0 kernel invocation
 	###
 	def forward(
 		self,
