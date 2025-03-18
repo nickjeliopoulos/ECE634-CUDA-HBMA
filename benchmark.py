@@ -52,7 +52,7 @@ def main(args: argparse.Namespace) -> None:
 	### Display images
 	### TODO
 
-	### Run Torch CPU HBMA
+	### Run Torch CPU HBMA (Baseline)
 	### Run Torch CUDA HBMA
 	### Run Fused CUDA HBMA
 
