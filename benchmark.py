@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from hbma.torch_naive_hbma import HBMA_Naive
 from hbma.torch_fused_cuda_hbma import HBMA_CUDA_Fused
 from hbma.utils import loss_PSNR
-
+import os
 
 ### Benchmark Function
 ### Adapted from https://github.com/pjjajal/nutils/blob/main/nutils/benchmark.py
@@ -27,7 +27,6 @@ def benchmark_N_iterations(
 	### Run timer, get measurement
 	measurement = timer.timeit(N)
 	return measurement
-
 
 def main(args: argparse.Namespace) -> None:
 	### Initialize transforms
@@ -50,11 +49,34 @@ def main(args: argparse.Namespace) -> None:
 	print(f"Target Tensor Shape: {target_tensor.shape}")
 
 	### Display images
-	### TODO
+	### Torch CPU HBMA (Baseline)
+	naive_torch_cpu_hbma = HBMA_Naive(
+		levels=1,
+		block_sizes=[(8, 8)],
+		block_max_neighbor_search_distance=[1],
+	)
+	naive_torch_cpu_hbma = naive_torch_cpu_hbma.to("cpu")
+	motion_vectors, predicted_frame = naive_torch_cpu_hbma(anchor_tensor, target_tensor)
 
-	### Run Torch CPU HBMA (Baseline)
-	### Run Torch CUDA HBMA
-	### Run Fused CUDA HBMA
+	### Torch CUDA HBMA
+	naive_torch_cuda_hbma = naive_torch_cpu_hbma.to("cuda:0")
+	motion_vectors, predicted_frame = naive_torch_cuda_hbma(anchor_tensor, target_tensor)
+	motion_vectors = motion_vectors.sum(dim=1, keepdim=True)
+	motion_vectors = motion_vectors / torch.max(motion_vectors)
+	torchvision.utils.save_image( motion_vectors.squeeze(0), os.path.join(args.output_dir, "naive_hbma_motion.png"))
+	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "naive_hbma_predicted.png"))
+
+	### Fused CUDA HBMA
+	fused_cuda_hbma = HBMA_CUDA_Fused(
+		levels=1,
+		block_sizes=[(8, 8)],
+		block_max_neighbor_search_distance=[1],
+	)
+	motion_vectors, predicted_frame = fused_cuda_hbma(anchor_tensor, target_tensor)
+	motion_vectors = motion_vectors.sum(dim=1, keepdim=True)
+	motion_vectors = motion_vectors / torch.max(motion_vectors)
+	torchvision.utils.save_image( motion_vectors.squeeze(0), os.path.join(args.output_dir, "fused_cuda_hbma_motion.png"))
+	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "fused_cuda_hbma_predicted.png"))
 
 
 if __name__ == "__main__":
@@ -62,6 +84,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Benchmarking script")
 	parser.add_argument("--anchor-image-path", type=str, required=True, help="Anchor (source) image path")
 	parser.add_argument("--target-image-path", type=str, required=True, help="Target image path")
+	parser.add_argument("--output-dir", type=str, default="output/")
 	args = parser.parse_args()
 
 	### Run main function

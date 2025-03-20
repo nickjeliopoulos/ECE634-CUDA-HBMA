@@ -3,7 +3,6 @@ import torch.nn as nn
 from typing import *
 from .utils import loss_MAD
 
-
 ###
 ### Baseline HBMA Implementation that uses eager (or compiled) PyTorch
 ###
@@ -29,7 +28,6 @@ class HBMA_Naive(nn.Module):
 		### Generated with Copilot - precomputed for efficiency
 		self.valid_neighbor_block_LUT = self.compute_valid_neighbor_block_LUT()
 
-
 	def get_next_level_block_indices(self, current_level: int, current_block_indices: Tuple[int, int]) -> List[Tuple[int, int]]:
 		return [
 			(current_block_indices[0] * 2 + k, current_block_indices[1] * 2 + l)
@@ -37,7 +35,6 @@ class HBMA_Naive(nn.Module):
 			for l in range(2)
 			if 0 <= current_block_indices[0] * 2 + k < self.block_count[current_level+1][0] and 0 <= current_block_indices[1] * 2 + l < self.block_count[current_level+1][1]
 		]
-
 
 	def compute_valid_neighbor_block_LUT(self) -> List[Dict[Tuple[int, int], Set[Tuple[int, int]]]]:
 		return [
@@ -53,7 +50,6 @@ class HBMA_Naive(nn.Module):
 			}
 			for level in range(self.levels)
 		]
-
 
 	### Input: Reference block [N, C, H, W] and Target block [N, C, H, W]
 	### Output: Cost (MAD) [N, 1]
@@ -83,7 +79,6 @@ class HBMA_Naive(nn.Module):
 		### Compute cost metric
 		return loss_MAD(block_reference, block_target)
 	
-
 	### Input: Frames [N=1, C, H, W] 4D tensor
 	### Output: Motion Vectors [N, 2, num_blocks_x, num_blocks_y] and predicted frame [N, C, H, W]
 	def forward(

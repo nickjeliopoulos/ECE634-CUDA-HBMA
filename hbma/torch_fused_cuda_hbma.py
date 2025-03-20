@@ -4,7 +4,6 @@ from typing import *
 from .utils import loss_MAD
 from ece634_cuda_hbma import hbma_v0, hbma_v1
 
-
 ###
 ### Modified HBMA Module that uses a custom CUDA kernel for computation, rather than native PyTorch
 ###
@@ -30,7 +29,6 @@ class HBMA_CUDA_Fused(nn.Module):
 		### Generated with Copilot - precomputed for efficiency
 		self.valid_neighbor_block_LUT = self.compute_valid_neighbor_block_LUT()
 
-
 	def compute_valid_neighbor_block_LUT(self) -> List[Dict[Tuple[int, int], Set[Tuple[int, int]]]]:
 		return [
 			{
@@ -46,7 +44,6 @@ class HBMA_CUDA_Fused(nn.Module):
 			for level in range(self.levels)
 		]
 	
-
 	###
 	### Invoke custom CUDA kernel
 	### TODO: Implement hbma_v0 kernel invocation
@@ -59,5 +56,7 @@ class HBMA_CUDA_Fused(nn.Module):
 		### Check if the input frames are of the same size
 		assert(reference_frame.size() == target_frame.size())
 		N, C, H, W = reference_frame.size()	
-	
-		return reference_frame
+		
+		motion_vectors = torch.zeros(size=(N, 2, *self.block_count[-1]), dtype=reference_frame.dtype, device=reference_frame.device)
+
+		return motion_vectors, reference_frame
