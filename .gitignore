@@ -170,6 +170,11 @@ cython_debug/
 *.png
 *.jpg
 *.jpeg
+*.csv
+*.md
 
 # PyPI configuration file
 .pypirc
+
+# Exclusions - need to come last
+!README.md
