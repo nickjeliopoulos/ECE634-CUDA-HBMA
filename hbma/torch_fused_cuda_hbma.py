@@ -9,7 +9,7 @@ from ece634_cuda_hbma import hbma_v0, hbma_v1
 ###
 class HBMA_CUDA_Fused(nn.Module):
 	def __init__(self, block_size: Tuple, block_max_neighbor_search_distance: int, input_image_size: Tuple, levels: int = 2):
-		super(self).__init__()
+		super().__init__()
 
 		assert(input_image_size[0] % block_size[0] == 0)
 		assert(input_image_size[1] % block_size[1] == 0)
