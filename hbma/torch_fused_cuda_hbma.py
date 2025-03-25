@@ -16,8 +16,8 @@ class HBMA_CUDA_Fused(nn.Module):
 
 		self.input_image_size = input_image_size
 		self.levels = levels
-		self.block_size = 8
-		self.block_count = (input_image_size[0] // self.block_size, input_image_size[1] // self.block_size)
+		self.block_size = block_size
+		self.block_count = (input_image_size[0] // self.block_size[0], input_image_size[1] // self.block_size[1])
 		self.neighborhood_size = block_max_neighbor_search_distance
 
 	###
@@ -35,6 +35,6 @@ class HBMA_CUDA_Fused(nn.Module):
 		N, C, H, W = reference_frame.size()	
 		
 		motion_vectors = torch.zeros(size=(N, 2, *self.block_count), dtype=reference_frame.dtype, device=reference_frame.device)
-		predicted_frame = hbma_v0(reference_frame, target_frame, self.block_size, self.neighborhood_size, self.block_count, self.levels)
+		predicted_frame = hbma_v0(reference_frame, target_frame, self.levels, self.block_size[0], self.block_size[1], self.neighborhood_size)
 
 		return motion_vectors, predicted_frame

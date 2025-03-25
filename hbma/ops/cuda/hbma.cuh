@@ -8,7 +8,8 @@ namespace ops::cuda::hbma {
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
 		const int32_t levels,
-		const int32_t block_size,
+		const int32_t block_size_height,
+		const int32_t block_size_width,
 		const int32_t neighborhood_size
 	);
 
@@ -16,7 +17,8 @@ namespace ops::cuda::hbma {
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
 		const int32_t levels,
-		const int32_t block_size,
+		const int32_t block_size_height,
+		const int32_t block_size_width,
 		const int32_t neighborhood_size
 	);
 

@@ -12,36 +12,36 @@ namespace ops::cuda::hbma{
 			int32_t image_channels;
 			int32_t image_height;
 			int32_t image_width;
-			int32_t block_sizes[HBMA_MAX_LEVELS];
+			int32_t block_size_height[HBMA_MAX_LEVELS];
+			int32_t block_size_width[HBMA_MAX_LEVELS];
 			int32_t block_counts_height[HBMA_MAX_LEVELS];
 			int32_t block_counts_width[HBMA_MAX_LEVELS];
 			int32_t neighborhood_sizes[HBMA_MAX_LEVELS];
 		};
 	}
 
-	// Helper function to get the problem size
-	// TODO: Parameterize the problem according to input. For now, we are fixing some of the 
-	// problem parameters to be constant.
+	// Helper function to compute and store the problem size
 	hbma_problem_size get_hbma_problem_size(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
 		const int32_t levels,
-		const int32_t block_size
+		const int32_t block_size_height,
+		const int32_t block_size_width,
+		const int32_t neighborhood_size
 	    ) {
 		const int32_t C = (int32_t) target_frame.size(1);
 		const int32_t H = (int32_t) target_frame.size(2);
 		const int32_t W = (int32_t) target_frame.size(3);
-		const int32_t HBMA_BLOCK_COUNT_HEIGHT = H / block_size;
-		const int32_t HBMA_BLOCK_COUNT_WIDTH = W / block_size;
+		const int32_t HBMA_BLOCK_COUNT_HEIGHT = H / block_size_height;
+		const int32_t HBMA_BLOCK_COUNT_WIDTH = W / block_size_width;
 
 		// Problem size
 		hbma_problem_size problem_size = {
-			1,
+			levels,
 			C, H, W,
-			{block_size},
-			{HBMA_BLOCK_COUNT_HEIGHT},
-			{HBMA_BLOCK_COUNT_WIDTH},
-			{2}
+			{block_size_height}, {block_size_width},
+			{HBMA_BLOCK_COUNT_HEIGHT}, {HBMA_BLOCK_COUNT_WIDTH},
+			{neighborhood_size}
 		};
 
 		return problem_size;
@@ -56,8 +56,11 @@ namespace ops::cuda::hbma{
 		torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> reconstructed_frame,
 		// Problem Size
 		const int32_t level,
-		const int32_t image_channels, const int32_t image_height, const int32_t image_width,
-		const int32_t block_size,
+		const int32_t image_channels, 
+		const int32_t image_height, 
+		const int32_t image_width,
+		const int32_t block_size_height,
+		const int32_t block_size_width,
 		const int32_t block_count_height,
 		const int32_t block_count_width,
 		const int32_t neighborhood_size
@@ -65,8 +68,8 @@ namespace ops::cuda::hbma{
 		// Indexing
 		int block_x = blockIdx.x;
 		int block_y = blockIdx.y;
-		int pixel_x = block_x * block_size;
-		int pixel_y = block_y * block_size;
+		int pixel_x = block_x * block_size_height;
+		int pixel_y = block_y * block_size_width;
 		
 		int global_x = pixel_x + threadIdx.x;
 		int global_y = pixel_y + threadIdx.y;
@@ -81,8 +84,8 @@ namespace ops::cuda::hbma{
 			for (int dx = -neighborhood_size; dx <= neighborhood_size; ++dx) {
 				float candidate_cost = 0.0f;
 				// Loop over all pixels in the current block.
-				for (int j = 0; j < block_size; j++) {
-					for (int i = 0; i < block_size; i++) {
+				for (int j = 0; j < block_size_height; j++) {
+					for (int i = 0; i < block_size_width; i++) {
 						int t_x = pixel_x + i;
 						int t_y = pixel_y + j;
 						int candidate_x = t_x + dx;
@@ -113,18 +116,26 @@ namespace ops::cuda::hbma{
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
 		const int32_t levels,
-		const int32_t block_size,
-		const int32_t neighborhood_search_size
+		const int32_t block_size_height,
+		const int32_t block_size_width,
+		const int32_t neighborhood_size
 		) {
 		// Get the problem size
-		const hbma_problem_size problem_size = get_hbma_problem_size(anchor_frame, target_frame, levels, block_size);
+		const hbma_problem_size problem_size = get_hbma_problem_size(
+			anchor_frame, 
+			target_frame, 
+			levels, 
+			block_size_height, 
+			block_size_width,
+			neighborhood_size
+		);
 
 		// Allocate storage for the output
 		torch::Tensor reconstructed_frame = torch::empty_like(target_frame);
 
 		// PLACEHOLDER: Construct launch bounds
-		dim3 threads(problem_size.block_sizes[0], problem_size.block_sizes[0]);
-		dim3 grid(problem_size.block_counts_width[0], problem_size.block_counts_height[0]);
+		dim3 threads(problem_size.block_size_height[0], problem_size.block_size_width[0]);
+		dim3 grid(problem_size.block_counts_height[0], problem_size.block_counts_width[0]);
 
 		// TODO: Implement a kernel invocation for multiple levels, for now we will just do one level
 		hbma_single_level_fp32_cuda_kernel<<<grid, threads>>>(
@@ -133,9 +144,8 @@ namespace ops::cuda::hbma{
 			reconstructed_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			problem_size.levels,
 			problem_size.image_channels, problem_size.image_height, problem_size.image_width,
-			problem_size.block_sizes[0],
-			problem_size.block_counts_height[0],
-			problem_size.block_counts_width[0],
+			problem_size.block_size_height[0], problem_size.block_size_width[0],
+			problem_size.block_counts_height[0], problem_size.block_counts_width[0],
 			problem_size.neighborhood_sizes[0]
 		);
 		
