@@ -27,26 +27,30 @@ TODO
 ```
 
 # Project Goals and Deliverables
-**Main goal:** our implementation in CUDA is faster (lower latency) than a CPU implementation on X device given Y image size
+**Main goal:** our implementation in CUDA is faster (lower latency) than a CPU implementation across various HBMA configurations.
 
-### Questions + Design Decisions:
-1.  Given device X, what are the optimal thread / grid sizes for our CUDA HBMA?
-2.  How can we optimize our HBMA to take advantage of (1) shared memory and (2) cache hit rate (overall memory traffic)
-3.  After that, how can we optimize our HBMA to optimize ALU/TensorCore? pipeline utilization (overall compute)
+### Design Decisions:
+* How should we partition workload on the GPU (multiprocessing cores, threadblocks, and threads)?
+* How should we utilize shared memory to promote better memory traffic patterns?
+* How should we utilize design paradigms (warp-tiling, thread-swizzling) to promote better performance?
 
 ### Evaluations
-**Implement multiple versions of our HBMA kernel**
-1.  Naive, no manual optimization for memory traffic
-2.  Attempt to cache in SMEM, optimize memory traffic
-3.  Fine-tune grid / block size for X GPU.
-4.  ???
+We will implement various versions of our kernel to illustrate the effect of design decisions on performance.
+* **V1:** Naive, no manual or intentional optimization
+* **V2:** Redesign V1 to take advantage of shared memory, other 
+* **V3:** Autotune V2 kernel parameters across GPU's:
+  * NVIDIA RTX 3090Ti
+  * NVIDIA AGX Orin Developer Board,
+  * NVIDIA A100
 
 **What's the baseline(s)?**
-1.  PyTorch CPU implementation
-2.  Stretch: PyTorch GPU implementation 
-3.  Mega Stretch: PyTorch GPU + torch.compile
+* PyTorch CPU implementation (Done in Nick's `project-1`)
+* PyTorch GPU implementation (Done in Nick's `project-1`)
+* (Stretch Goal) PyTorch GPU + torch.compile
 
 **Tables + Figures:**
-1.  Table 1: Version 1-3 latency vs Torch CPU, Torch GPU
-2.  Table 2: Plot grid / threadblock sizes of Version 3 vs. Version 3 latency, # instructions
-3.  Table / Figure: How many more stages can we get for equivalent latency with our HBMA to Torch CPU?
+* Table 1: **Main latency results table.** V1-V3 latency vs Torch CPU, Torch GPU, Torch GPU + Compile across devices and HBMA parameterizations.
+* Table 2: **V2 shared memory evaluation.** Quantify memory traffic improvement with profiling tools (cache hit rate, number of loads to/from global memory).
+* Table 3: **V3 autotune evaluation.** Plot grid and threadblock sizes of V3 vs. latency, # instructions 
+* Table 4: **Search Granualrity - Latency Equivalence.** For *similar latency* as the baselines, how much *finer* can our HBMA search be?
+

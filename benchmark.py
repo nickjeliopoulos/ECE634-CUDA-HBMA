@@ -136,9 +136,7 @@ def main(args: argparse.Namespace) -> None:
 
 	### Save dataframe to CSV
 	print(f"Benchmark results saved to {output_csv_path} and {output_md_path}")
-
-
-
+	
 if __name__ == "__main__":
 	### Load arguments
 	parser = argparse.ArgumentParser(description="Benchmarking script")
