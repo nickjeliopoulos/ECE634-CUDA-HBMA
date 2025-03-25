@@ -7,13 +7,17 @@ namespace ops::cuda::hbma {
 	torch::Tensor hbma_v0(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
-		const int32_t levels
+		const int32_t levels,
+		const int32_t block_size,
+		const int32_t neighborhood_size
 	);
 
 	torch::Tensor hbma_v1(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
-		const int32_t levels
+		const int32_t levels,
+		const int32_t block_size,
+		const int32_t neighborhood_size
 	);
 
     // Register the operators to PyTorch via PyBind11

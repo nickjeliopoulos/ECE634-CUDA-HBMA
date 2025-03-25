@@ -3,15 +3,15 @@
 
 namespace ops::cuda::hbma{
 	namespace {
-		// Constants
-		constexpr int32_t HBMA_MAX_LEVELS = 4;
+		// Constants Expressions
+		constexpr int32_t HBMA_MAX_LEVELS = 1;
 		
 		// Structures and helpers
 		struct hbma_problem_size{
 			int32_t levels;
+			int32_t image_channels;
 			int32_t image_height;
 			int32_t image_width;
-			int32_t image_channels;
 			int32_t block_sizes[HBMA_MAX_LEVELS];
 			int32_t block_counts_height[HBMA_MAX_LEVELS];
 			int32_t block_counts_width[HBMA_MAX_LEVELS];
@@ -25,22 +25,23 @@ namespace ops::cuda::hbma{
 	hbma_problem_size get_hbma_problem_size(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
-		const int32_t levels
-	){
-		const int32_t HBMA_BLOCK_SIZE = 8;
-		const int32_t HBMA_BLOCK_COUNT_HEIGHT = target_frame.size(1) / HBMA_BLOCK_SIZE;
-		const int32_t HBMA_BLOCK_COUNT_WIDTH = target_frame.size(2) / HBMA_BLOCK_SIZE;
+		const int32_t levels,
+		const int32_t block_size
+	    ) {
+		const int32_t C = (int32_t) target_frame.size(1);
+		const int32_t H = (int32_t) target_frame.size(2);
+		const int32_t W = (int32_t) target_frame.size(3);
+		const int32_t HBMA_BLOCK_COUNT_HEIGHT = H / block_size;
+		const int32_t HBMA_BLOCK_COUNT_WIDTH = W / block_size;
 
 		// Problem size
 		hbma_problem_size problem_size = {
 			1,
-			target_frame.size(1),
-			target_frame.size(2),
-			target_frame.size(3),
-			{HBMA_BLOCK_SIZE, HBMA_BLOCK_SIZE, HBMA_BLOCK_SIZE, HBMA_BLOCK_SIZE},
-			{HBMA_BLOCK_COUNT_HEIGHT, HBMA_BLOCK_COUNT_HEIGHT, HBMA_BLOCK_COUNT_HEIGHT, HBMA_BLOCK_COUNT_HEIGHT},
-			{HBMA_BLOCK_COUNT_WIDTH, HBMA_BLOCK_COUNT_WIDTH, HBMA_BLOCK_COUNT_WIDTH, HBMA_BLOCK_COUNT_WIDTH},
-			{2, 2, 2, 2}
+			C, H, W,
+			{block_size},
+			{HBMA_BLOCK_COUNT_HEIGHT},
+			{HBMA_BLOCK_COUNT_WIDTH},
+			{2}
 		};
 
 		return problem_size;
@@ -55,21 +56,20 @@ namespace ops::cuda::hbma{
 		torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> reconstructed_frame,
 		// Problem Size
 		const int32_t level,
-		const int32_t image_height,
-		const int32_t image_width,
-		const int32_t image_channels,
+		const int32_t image_channels, const int32_t image_height, const int32_t image_width,
 		const int32_t block_size,
 		const int32_t block_count_height,
 		const int32_t block_count_width,
-		const int32_t neighborhood_size) {
+		const int32_t neighborhood_size
+	    ) {
 		// Indexing
 		int block_x = blockIdx.x;
 		int block_y = blockIdx.y;
 		int pixel_x = block_x * block_size;
 		int pixel_y = block_y * block_size;
 		
-		int global_x = start_x + threadIdx.x;
-		int global_y = start_y + threadIdx.y;
+		int global_x = pixel_x + threadIdx.x;
+		int global_y = pixel_y + threadIdx.y;
 		
 		// Variables to store the best candidate offset (found by each thread, redundantly)
 		float best_cost = 1e10f;
@@ -83,8 +83,8 @@ namespace ops::cuda::hbma{
 				// Loop over all pixels in the current block.
 				for (int j = 0; j < block_size; j++) {
 					for (int i = 0; i < block_size; i++) {
-						int t_x = start_x + i;
-						int t_y = start_y + j;
+						int t_x = pixel_x + i;
+						int t_y = pixel_y + j;
 						int candidate_x = t_x + dx;
 						int candidate_y = t_y + dy;
 						
@@ -112,9 +112,12 @@ namespace ops::cuda::hbma{
 	torch::Tensor hbma_v0(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
-		const int32_t levels) {
+		const int32_t levels,
+		const int32_t block_size,
+		const int32_t neighborhood_search_size
+		) {
 		// Get the problem size
-		const hbma_problem_size problem_size = get_hbma_problem_size(anchor_frame, target_frame, levels);
+		const hbma_problem_size problem_size = get_hbma_problem_size(anchor_frame, target_frame, levels, block_size);
 
 		// Allocate storage for the output
 		torch::Tensor reconstructed_frame = torch::empty_like(target_frame);
@@ -129,9 +132,7 @@ namespace ops::cuda::hbma{
 			target_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			reconstructed_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			problem_size.levels,
-			problem_size.image_height,
-			problem_size.image_width,
-			problem_size.image_channels,
+			problem_size.image_channels, problem_size.image_height, problem_size.image_width,
 			problem_size.block_sizes[0],
 			problem_size.block_counts_height[0],
 			problem_size.block_counts_width[0],

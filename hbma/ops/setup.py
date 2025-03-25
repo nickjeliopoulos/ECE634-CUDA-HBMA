@@ -9,6 +9,7 @@ NVCC_ARCHCODE = "sm_86"
 
 setup(
     name="ece634-cuda-hbma",
+	version="0.1",
     install_requires=["torch >= 2.2", "pybind11"],
     ext_modules=[
         CUDAExtension(
