@@ -13,7 +13,9 @@ A naive kernel `hbma_v0` was first implemented, with iterative improvements `v1`
 <!-- Installation Guide -->
 # Installation 
 ```bash
-TODO
+python -m pip install -r requirements.txt
+cd hbma/ops
+python setup.py develop
 ```
 
 <!-- Usage Guide -->
@@ -23,7 +25,7 @@ TODO
 
 ## benchmark.py
 ```bash
-TODO
+python benchmark.py --anchor-image-path im1k_0.jpg --target-image-path im1k_8.jpg
 ```
 
 # Project Goals and Deliverables
