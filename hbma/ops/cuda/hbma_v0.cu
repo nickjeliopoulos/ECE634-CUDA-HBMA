@@ -111,7 +111,8 @@ namespace ops::cuda::hbma {
 						int candidate_x = t_x + dx;
 						int candidate_y = t_y + dy;
 						
-						// Check bounds for the candidate pixel.
+						// Check bounds for the candidate pixel
+						// NOTE: If we know that blo
 						if (candidate_x < 0 || candidate_x >= image_width ||
 						    candidate_y < 0 || candidate_y >= image_height) {
 							valid = false;
@@ -122,9 +123,9 @@ namespace ops::cuda::hbma {
 						float difference = 0.0f;
 						#pragma unroll
 						for(int c = 0; c < INPUT_CHANNELS; c++) {
-							difference += target_frame[0][c][t_y][t_x] - anchor_frame[0][c][candidate_y][candidate_x];
+							difference = target_frame[0][c][t_y][t_x] - anchor_frame[0][c][candidate_y][candidate_x];
+							candidate_cost += difference * difference;
 						}
-						candidate_cost += difference * difference;
 					}
 					if (!valid) break;
 				}
