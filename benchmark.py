@@ -57,35 +57,27 @@ def main(args: argparse.Namespace) -> None:
 	# print(f"Target Tensor Shape: {target_tensor.shape}")
 
 	### Display images
-	### Torch CPU HBMA (Baseline)
-	# naive_torch_cpu_hbma = HBMA_Naive(
-	# 	levels=1,
-	# 	block_size=(8, 8),
-	# 	block_max_neighbor_search_distance=1,
-	# 	input_image_size=(H, W)
-	# )
-	# naive_torch_cpu_hbma = naive_torch_cpu_hbma.to("cpu")
-	# motion_vectors, predicted_frame = naive_torch_cpu_hbma(anchor_tensor, target_tensor)
+	### Torch CPU HBMA (Baseline #1)
+	naive_torch_cpu_hbma = HBMA_Naive(
+		levels=1,
+		block_size=(8, 8),
+		block_max_neighbor_search_distance=1,
+		input_image_size=(H, W)
+	)
 
-	# ### Torch CUDA HBMA
-	# naive_torch_cuda_hbma = naive_torch_cpu_hbma.to("cuda:0")
-	# motion_vectors, predicted_frame = naive_torch_cuda_hbma(anchor_tensor, target_tensor)
-	# motion_vectors = motion_vectors.sum(dim=1, keepdim=True)
-	# motion_vectors = motion_vectors / torch.max(motion_vectors)
-	# torchvision.utils.save_image( motion_vectors.squeeze(0), os.path.join(args.output_dir, "naive_hbma_motion.png"))
-	# torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "naive_hbma_predicted.png"))
+	### Torch CUDA HBMA (Baseline #2)
+	naive_torch_cuda_hbma = naive_torch_cpu_hbma.to("cuda:0")
+	_, predicted_frame = naive_torch_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
+	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "naive_hbma_predicted.png"))
 
-	### Fused CUDA HBMA
+	### Fused CUDA HBMA (Method)
 	fused_cuda_hbma = HBMA_CUDA_Fused(
 		levels=1,
 		block_size=(8, 8),
 		block_max_neighbor_search_distance=1,
 		input_image_size=(H, W)
 	)
-	motion_vectors, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
-	motion_vectors = motion_vectors.sum(dim=1, keepdim=True)
-	motion_vectors = motion_vectors / torch.max(motion_vectors)
-	torchvision.utils.save_image( motion_vectors.squeeze(0), os.path.join(args.output_dir, "fused_cuda_hbma_motion.png"))
+	_, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
 	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "fused_cuda_hbma_predicted.png"))
 
 	###

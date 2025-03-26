@@ -1,13 +1,14 @@
 #define _HBMA_CUH_PYBIND_GUARD_
 #include "hbma.cuh"
 
-namespace ops::cuda::hbma{
+namespace ops::cuda::hbma {
 	namespace {
-		// Constants Expressions
+		// Constant expressions
 		constexpr int32_t HBMA_MAX_LEVELS = 1;
+		constexpr int32_t INPUT_CHANNELS = 3;
 		
-		// Structures and helpers
-		struct hbma_problem_size{
+		// Structure to hold problem size parameters.
+		struct hbma_problem_size {
 			int32_t levels;
 			int32_t image_channels;
 			int32_t image_height;
@@ -17,10 +18,11 @@ namespace ops::cuda::hbma{
 			int32_t block_counts_height[HBMA_MAX_LEVELS];
 			int32_t block_counts_width[HBMA_MAX_LEVELS];
 			int32_t neighborhood_sizes[HBMA_MAX_LEVELS];
+			bool is_valid;
 		};
 	}
 
-	// Helper function to compute and store the problem size
+	// Helper function to compute and store the problem size.
 	hbma_problem_size get_hbma_problem_size(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
@@ -28,33 +30,42 @@ namespace ops::cuda::hbma{
 		const int32_t block_size_height,
 		const int32_t block_size_width,
 		const int32_t neighborhood_size
-	    ) {
+	) {
+		// Tensors have NCHW layout
 		const int32_t C = (int32_t) target_frame.size(1);
 		const int32_t H = (int32_t) target_frame.size(2);
 		const int32_t W = (int32_t) target_frame.size(3);
+
 		const int32_t HBMA_BLOCK_COUNT_HEIGHT = H / block_size_height;
 		const int32_t HBMA_BLOCK_COUNT_WIDTH = W / block_size_width;
 
-		// Problem size
+		bool valid_problem_size = (
+			C == INPUT_CHANNELS && 
+			H % block_size_height == 0 && 
+			W % block_size_width == 0 &&
+			HBMA_BLOCK_COUNT_HEIGHT > 0 &&
+			HBMA_BLOCK_COUNT_WIDTH > 0
+		);
+
 		hbma_problem_size problem_size = {
 			levels,
 			C, H, W,
 			{block_size_height}, {block_size_width},
 			{HBMA_BLOCK_COUNT_HEIGHT}, {HBMA_BLOCK_COUNT_WIDTH},
-			{neighborhood_size}
+			{neighborhood_size},
+			valid_problem_size
 		};
 
 		return problem_size;
 	}
 
-	// Kernel for HBMA
-	// Naive Implementation (v0). E.g., no shared memory caching, thread/warp tiling, or any intentional optimization.
+	// Naive HBMA kernel (v0): no shared memory, no tiling optimization.
 	__global__ void hbma_single_level_fp32_cuda_kernel(
-		// TensorAccessors, AKA Pointer Wrappers
+		// Tensor accessors (assuming batch size 1 and one channel)
 		const torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> anchor_frame, 
 		const torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> target_frame, 
 		torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> reconstructed_frame,
-		// Problem Size
+		// Problem size parameters.
 		const int32_t level,
 		const int32_t image_channels, 
 		const int32_t image_height, 
@@ -64,39 +75,62 @@ namespace ops::cuda::hbma{
 		const int32_t block_count_height,
 		const int32_t block_count_width,
 		const int32_t neighborhood_size
-	    ) {
-		// Indexing
-		int block_x = blockIdx.x;
-		int block_y = blockIdx.y;
-		int pixel_x = block_x * block_size_height;
-		int pixel_y = block_y * block_size_width;
+	) {
+		// Revised indexing: assume grid.x corresponds to blocks along the width, grid.y along the height.
+		int block_x = blockIdx.x;  // horizontal block index
+		int block_y = blockIdx.y;  // vertical block index
+		// Compute starting pixel coordinates for the block.
+		int pixel_x = block_x * block_size_width;
+		int pixel_y = block_y * block_size_height;
 		
-		int global_x = pixel_x + threadIdx.x;
-		int global_y = pixel_y + threadIdx.y;
+		// Thread indices within the block.
+		int thread_x = threadIdx.x;
+		int thread_y = threadIdx.y;
+		int global_x = pixel_x + thread_x;
+		int global_y = pixel_y + thread_y;
 		
-		// Variables to store the best candidate offset (found by each thread, redundantly)
+		// Each thread finds the best candidate offset for its block (redundantly).
 		float best_cost = 1e10f;
 		int best_dx = 0;
 		int best_dy = 0;
 		
 		// Loop over candidate offsets in the search window.
-		for (int dy = -neighborhood_size; dy <= neighborhood_size; ++dy) {
-			for (int dx = -neighborhood_size; dx <= neighborhood_size; ++dx) {
+		for (int dy = -neighborhood_size; dy <= neighborhood_size; dy++) {
+			for (int dx = -neighborhood_size; dx <= neighborhood_size; dx++) {
+
 				float candidate_cost = 0.0f;
+				bool valid = true;
+
 				// Loop over all pixels in the current block.
 				for (int j = 0; j < block_size_height; j++) {
 					for (int i = 0; i < block_size_width; i++) {
+						// Compute absolute positions for the block pixel.
 						int t_x = pixel_x + i;
 						int t_y = pixel_y + j;
+						// Compute candidate coordinates.
 						int candidate_x = t_x + dx;
 						int candidate_y = t_y + dy;
 						
-						// For simplicity, assume candidate indices are in bounds
-						// MSE cost function
-						float diff = target_frame[0][t_y][t_x][0] - anchor_frame[0][candidate_y][candidate_x][0];
-						candidate_cost += diff * diff;
+						// Check bounds for the candidate pixel.
+						if (candidate_x < 0 || candidate_x >= image_width ||
+						    candidate_y < 0 || candidate_y >= image_height) {
+							valid = false;
+							break;
+						}
+						
+						// Compute MSE, candidate cost
+						float difference = 0.0f;
+						#pragma unroll
+						for(int c = 0; c < INPUT_CHANNELS; c++) {
+							difference += target_frame[0][c][t_y][t_x] - anchor_frame[0][c][candidate_y][candidate_x];
+						}
+						candidate_cost += difference * difference;
 					}
+					if (!valid) break;
 				}
+				// If candidate went out of bounds, skip it
+				if (!valid) continue;
+				
 				// Update best candidate if a lower cost is found.
 				if (candidate_cost < best_cost) {
 					best_cost = candidate_cost;
@@ -106,12 +140,22 @@ namespace ops::cuda::hbma{
 			}
 		}
 		
-		// Use the best candidate offset to compute the output pixel.
+		// Compute the final candidate coordinates for this thread's output pixel.
 		int best_global_x = global_x + best_dx;
 		int best_global_y = global_y + best_dy;
-		reconstructed_frame[0][global_y][global_x][0] = anchor_frame[0][best_global_y][best_global_x][0];			
+		
+		// Bounds check then write
+		if (best_global_x >= 0 && best_global_x < image_width && best_global_y >= 0 && best_global_y < image_height){
+			#pragma unroll
+			for(int c = 0; c < INPUT_CHANNELS; c++) {
+				reconstructed_frame[0][c][global_y][global_x] = anchor_frame[0][c][best_global_y][best_global_x];
+			}
+		}
 	}
 
+	// HBMA v0 CUDA kernel wrapper
+	// Operates on 4D anchor and target frames with shape [N,C,H,W]
+	// Restrictions: Only supports N=1, C=3, and a single level currently
 	torch::Tensor hbma_v0(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
@@ -119,8 +163,8 @@ namespace ops::cuda::hbma{
 		const int32_t block_size_height,
 		const int32_t block_size_width,
 		const int32_t neighborhood_size
-		) {
-		// Get the problem size
+	) {
+		// Compute problem size, check validity
 		const hbma_problem_size problem_size = get_hbma_problem_size(
 			anchor_frame, 
 			target_frame, 
@@ -129,16 +173,22 @@ namespace ops::cuda::hbma{
 			block_size_width,
 			neighborhood_size
 		);
+		
+		// Throw exception if problem size is invalid
+		if (!problem_size.is_valid) {
+			throw std::invalid_argument("Invalid problem size: Ensure that the input tensor dimensions are divisible by the block size, and that the block count is greater than zero.");
+		}
 
-		// Allocate storage for the output
+		// Allocate output (reconstructed_frame)
 		torch::Tensor reconstructed_frame = torch::empty_like(target_frame);
 
-		// PLACEHOLDER: Construct launch bounds
-		dim3 threads(problem_size.block_size_height[0], problem_size.block_size_width[0]);
-		dim3 grid(problem_size.block_counts_height[0], problem_size.block_counts_width[0]);
+		// Set up kernel launch configuration.
+		// grid.x: number of blocks along width, grid.y: number along height.
+		dim3 threads(problem_size.block_size_width[0], problem_size.block_size_height[0]);
+		dim3 grid(problem_size.block_counts_width[0], problem_size.block_counts_height[0]);
 
-		// TODO: Implement a kernel invocation for multiple levels, for now we will just do one level
-		hbma_single_level_fp32_cuda_kernel<<<grid, threads>>>(
+		// Launch the kernel for the (only) level.
+		hbma_single_level_fp32_cuda_kernel<<<grid, threads>>>(  
 			anchor_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			target_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			reconstructed_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
