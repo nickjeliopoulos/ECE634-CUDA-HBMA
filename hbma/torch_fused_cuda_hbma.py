@@ -29,12 +29,22 @@ class HBMA_CUDA_Fused(nn.Module):
 		reference_frame: torch.Tensor,
 		target_frame: torch.Tensor,
 	) -> Tuple[torch.Tensor, torch.Tensor]:
-		### Check if the input frames are of the same size
-		assert(reference_frame.size() == target_frame.size())
 		assert(reference_frame.device.type == 'cuda' and target_frame.device.type == 'cuda')
 		N, C, H, W = reference_frame.size()	
 		
-		motion_vectors = torch.zeros(size=(N, 2, *self.block_count), dtype=reference_frame.dtype, device=reference_frame.device)
-		predicted_frame = hbma_v0(reference_frame, target_frame, self.levels, self.block_size[0], self.block_size[1], self.neighborhood_size)
+		motion_vectors = torch.zeros(
+			size=(N, 2, *self.block_count), 
+			dtype=reference_frame.dtype, 
+			device=reference_frame.device
+		)
+
+		predicted_frame = hbma_v0(
+			reference_frame, 
+			target_frame, 
+			self.levels, 
+			self.block_size[0], 
+			self.block_size[1], 
+			self.neighborhood_size
+		)
 
 		return motion_vectors, predicted_frame
