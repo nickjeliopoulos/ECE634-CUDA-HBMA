@@ -172,6 +172,7 @@ cython_debug/
 *.jpeg
 *.csv
 *.md
+*.txt
 
 # PyPI configuration file
 .pypirc
