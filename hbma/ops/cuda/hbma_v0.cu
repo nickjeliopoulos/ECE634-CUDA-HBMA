@@ -4,20 +4,20 @@
 namespace ops::cuda::hbma {
 	namespace {
 		// Constant expressions
-		constexpr int32_t HBMA_MAX_LEVELS = 1;
-		constexpr int32_t INPUT_CHANNELS = 3;
+		constexpr int HBMA_MAX_LEVELS = 1;
+		constexpr int INPUT_CHANNELS = 3;
 		
 		// Structure to hold problem size parameters.
 		struct hbma_problem_size {
-			int32_t levels;
-			int32_t image_channels;
-			int32_t image_height;
-			int32_t image_width;
-			int32_t block_size_height[HBMA_MAX_LEVELS];
-			int32_t block_size_width[HBMA_MAX_LEVELS];
-			int32_t block_counts_height[HBMA_MAX_LEVELS];
-			int32_t block_counts_width[HBMA_MAX_LEVELS];
-			int32_t neighborhood_sizes[HBMA_MAX_LEVELS];
+			int levels;
+			int image_channels;
+			int image_height;
+			int image_width;
+			int block_size_height[HBMA_MAX_LEVELS];
+			int block_size_width[HBMA_MAX_LEVELS];
+			int block_counts_height[HBMA_MAX_LEVELS];
+			int block_counts_width[HBMA_MAX_LEVELS];
+			int neighborhood_sizes[HBMA_MAX_LEVELS];
 			bool is_valid;
 		};
 	}
@@ -26,18 +26,18 @@ namespace ops::cuda::hbma {
 	hbma_problem_size get_hbma_problem_size(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
-		const int32_t levels,
-		const int32_t block_size_height,
-		const int32_t block_size_width,
-		const int32_t neighborhood_size
+		const int levels,
+		const int block_size_height,
+		const int block_size_width,
+		const int neighborhood_size
 	) {
 		// Tensors have NCHW layout
-		const int32_t C = (int32_t) target_frame.size(1);
-		const int32_t H = (int32_t) target_frame.size(2);
-		const int32_t W = (int32_t) target_frame.size(3);
+		const int C = (int) target_frame.size(1);
+		const int H = (int) target_frame.size(2);
+		const int W = (int) target_frame.size(3);
 
-		const int32_t HBMA_BLOCK_COUNT_HEIGHT = H / block_size_height;
-		const int32_t HBMA_BLOCK_COUNT_WIDTH = W / block_size_width;
+		const int HBMA_BLOCK_COUNT_HEIGHT = H / block_size_height;
+		const int HBMA_BLOCK_COUNT_WIDTH = W / block_size_width;
 
 		bool valid_problem_size = (
 			C == INPUT_CHANNELS && 
@@ -66,30 +66,26 @@ namespace ops::cuda::hbma {
 		const torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> target_frame, 
 		torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> reconstructed_frame,
 		// Problem size parameters.
-		const int32_t level,
-		const int32_t image_channels, 
-		const int32_t image_height, 
-		const int32_t image_width,
-		const int32_t block_size_height,
-		const int32_t block_size_width,
-		const int32_t block_count_height,
-		const int32_t block_count_width,
-		const int32_t neighborhood_size
+		const int level,
+		const int image_channels, 
+		const int image_height, 
+		const int image_width,
+		const int block_size_height,
+		const int block_size_width,
+		const int block_count_height,
+		const int block_count_width,
+		const int neighborhood_size
 	) {
-		// Revised indexing: assume grid.x corresponds to blocks along the width, grid.y along the height.
-		int block_x = blockIdx.x;  // horizontal block index
-		int block_y = blockIdx.y;  // vertical block index
-		// Compute starting pixel coordinates for the block.
-		int pixel_x = block_x * block_size_width;
-		int pixel_y = block_y * block_size_height;
+		// Indexing
+		int pixel_x = blockIdx.x * block_size_width;
+		int pixel_y = blockIdx.y * block_size_height;
 		
-		// Thread indices within the block.
+		// Thread indices within the block
 		int thread_x = threadIdx.x;
 		int thread_y = threadIdx.y;
 		int global_x = pixel_x + thread_x;
 		int global_y = pixel_y + thread_y;
 		
-		// Each thread finds the best candidate offset for its block (redundantly).
 		float best_cost = 1e10f;
 		int best_dx = 0;
 		int best_dy = 0;
@@ -112,7 +108,6 @@ namespace ops::cuda::hbma {
 						int candidate_y = t_y + dy;
 						
 						// Check bounds for the candidate pixel
-						// NOTE: If we know that blo
 						if (candidate_x < 0 || candidate_x >= image_width ||
 						    candidate_y < 0 || candidate_y >= image_height) {
 							valid = false;
@@ -160,10 +155,10 @@ namespace ops::cuda::hbma {
 	torch::Tensor hbma_v0(
 		const torch::Tensor& anchor_frame, 
 		const torch::Tensor& target_frame,
-		const int32_t levels,
-		const int32_t block_size_height,
-		const int32_t block_size_width,
-		const int32_t neighborhood_size
+		const int levels,
+		const int block_size_height,
+		const int block_size_width,
+		const int neighborhood_size
 	) {
 		// Compute problem size, check validity
 		const hbma_problem_size problem_size = get_hbma_problem_size(
