@@ -49,7 +49,7 @@ def main(args: argparse.Namespace) -> None:
 	anchor_image = Image.open(args.anchor_image_path)
 	target_image = Image.open(args.target_image_path)
 
-	### Channels-Last Format (N, C, H, W)
+	### Tensors have shape (N, C, H, W)
 	anchor_tensor = transform(anchor_image).unsqueeze(0).contiguous()
 	target_tensor = transform(target_image).unsqueeze(0).contiguous()
 
@@ -132,8 +132,8 @@ def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
 	### Load arguments
 	parser = argparse.ArgumentParser(description="Benchmarking script")
-	parser.add_argument("--anchor-image-path", type=str, required=True, help="Anchor (source) image path")
-	parser.add_argument("--target-image-path", type=str, required=True, help="Target image path")
+	parser.add_argument("--anchor-image-path", type=str, default="images/akiyo0000.jpg", required=False, help="Anchor (source) image path")
+	parser.add_argument("--target-image-path", type=str, default="images/akiyo0028.jpg", required=False, help="Target image path")
 	parser.add_argument("--output-dir", type=str, default="output/")
 	args = parser.parse_args()
 

@@ -178,3 +178,5 @@ cython_debug/
 
 # Exclusions - need to come last
 !README.md
+!images/akiyo0000.jpg
+!images/akiyo0028.jpg

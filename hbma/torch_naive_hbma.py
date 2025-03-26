@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import *
-from .utils import loss_MAD
+from .utils import loss_MAD, loss_MSE
 
 ###
 ### Baseline HBMA Implementation that uses eager (or compiled) PyTorch
@@ -77,7 +77,8 @@ class HBMA_Naive(nn.Module):
 		]
 
 		### Compute cost metric
-		return loss_MAD(block_reference, block_target)
+		# return loss_MAD(block_reference, block_target)
+		return loss_MSE(block_reference, block_target)
 	
 	### Input: Frames [N=1, C, H, W] 4D tensor
 	### Output: Motion Vectors [N, 2, num_blocks_x, num_blocks_y] and predicted frame [N, C, H, W]
