@@ -147,13 +147,12 @@ namespace ops::cuda::hbma {
 		}
 	}
 	
-
 	// Step 3
 	__global__ void _hbma_compute_reconstructed_frame_kernel(
 		// Anchor frame: [N, C, H, W]
 		const torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> anchor_frame, 
 		// Best neighbor indices: [N, block_count_height, block_count_width]
-		const torch::PackedTensorAccessor64<long, 3, torch::RestrictPtrTraits> neighborhood_block_cost_indices,
+		const torch::PackedTensorAccessor64<long long, 3, torch::RestrictPtrTraits> neighborhood_block_cost_indices,
 		// Output reconstructed frame: [N, C, H, W]
 		torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> reconstructed_frame,
 		const int level,
@@ -199,18 +198,15 @@ namespace ops::cuda::hbma {
 		int dest_x = dest_block_start_w + local_x;
 	
 		// Check that the neighbor block is within valid bounds.
-		if (neighbor_block_idx_h < 0 || neighbor_block_idx_h >= block_count_height ||
-			neighbor_block_idx_w < 0 || neighbor_block_idx_w >= block_count_width) {
-			// Out-of-bounds neighbor: set output pixel to 0 (or some default value)
-			for (int c = 0; c < image_channels; c++) {
-				reconstructed_frame[0][c][dest_y][dest_x] = 0.0f;
-			}
-		} else {
+		if (neighbor_block_idx_h >= 0 || neighbor_block_idx_h < block_count_height ||
+			neighbor_block_idx_w >= 0 || neighbor_block_idx_w < block_count_width) {
 			// Compute the corresponding source pixel coordinates in the anchor frame.
 			int source_y = neighbor_block_start_h + local_y;
 			int source_x = neighbor_block_start_w + local_x;
+
 			// Copy across all channels.
-			for (int c = 0; c < image_channels; c++) {
+			#pragma unroll
+			for (int c = 0; c < INPUT_CHANNELS; c++) {
 				reconstructed_frame[0][c][dest_y][dest_x] = anchor_frame[0][c][source_y][source_x];
 			}
 		}
@@ -309,7 +305,7 @@ namespace ops::cuda::hbma {
 
 		_hbma_compute_reconstructed_frame_kernel<<<reconstruct_grid, reconstruct_threads>>>(
 			anchor_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
-			lowest_cost_neighborhood_block_indices.packed_accessor64<long, 3, torch::RestrictPtrTraits>(),
+			lowest_cost_neighborhood_block_indices.packed_accessor64<long long, 3, torch::RestrictPtrTraits>(),
 			reconstructed_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			problem_size.levels,
 			problem_size.image_channels, problem_size.image_height, problem_size.image_width,

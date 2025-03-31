@@ -5,6 +5,7 @@ import argparse
 from PIL import Image
 from typing import *
 from hbma.torch_fused_cuda_hbma import HBMA_CUDA_Fused
+import os
 
 def main(args: argparse.Namespace) -> None:
 	### Constants
@@ -36,9 +37,15 @@ def main(args: argparse.Namespace) -> None:
 		block_max_neighbor_search_distance=1,
 		input_image_size=(H, W)
 	)
-	_, ssd_costs = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
-	print(f"SSD Cost Shape: {ssd_costs.shape}")
-	print(f"SSD Cost Index: {ssd_costs}")
+	# _, ssd_costs = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
+	# print(f"SSD Cost Shape: {ssd_costs.shape}")
+	# print(f"SSD Cost Index: {ssd_costs}")
+
+	_, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
+	print(f"Predicted Shape: {predicted_frame.shape}")
+	torchvision.utils.save_image( anchor_tensor.squeeze(0), os.path.join(args.output_dir, "cost_debug_anchor.png"))
+	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "cost_debug_predicted.png"))
+
 
 if __name__ == "__main__":
 	### Load arguments
