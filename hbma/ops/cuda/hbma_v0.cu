@@ -204,7 +204,7 @@ namespace ops::cuda::hbma {
 			int source_y = neighbor_block_start_h + local_y;
 			int source_x = neighbor_block_start_w + local_x;
 
-			// Copy across all channels.
+			// Copy across all channels
 			#pragma unroll
 			for (int c = 0; c < INPUT_CHANNELS; c++) {
 				reconstructed_frame[0][c][dest_y][dest_x] = anchor_frame[0][c][source_y][source_x];
@@ -325,7 +325,5 @@ namespace ops::cuda::hbma {
 		}
 
 		return reconstructed_frame;
-		// return neighborhood_block_costs;
-		// return lowest_cost_neighborhood_block_index;
 	}
 }
