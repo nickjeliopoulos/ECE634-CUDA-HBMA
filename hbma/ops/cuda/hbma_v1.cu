@@ -1,5 +1,6 @@
 
 #include "hbma.cuh"
+#include "cuda_helpers.cuh"
 
 namespace ops::cuda::hbma{
 	namespace {

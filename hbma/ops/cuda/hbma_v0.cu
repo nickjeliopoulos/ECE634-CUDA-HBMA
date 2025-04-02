@@ -1,18 +1,12 @@
 #define _HBMA_CUH_PYBIND_GUARD_
 #include "hbma.cuh"
+#include "cuda_helpers.cuh"
 
 namespace ops::cuda::hbma {
 	namespace {
 		// Constant expressions
 		constexpr int HBMA_MAX_LEVELS = 1;
 		constexpr int INPUT_CHANNELS = 3;
-		constexpr int BLOCK_SIZE_HEIGHT = 8;
-		constexpr int BLOCK_SIZE_WIDTH = 8;
-		constexpr int NEIGHBORHOOD_SIZE = 1;
-		// For each pixel block, compute the costs of all blocks in the search window around it
-		// This is the total number of neighbors around each block including itself
-		// NOTE: You need to do bounds checking, because blocks near edges will have fewer neighbors
-		constexpr int NEIGHBORHOOD_INCLUDING_SELF_SIZE = (2 * NEIGHBORHOOD_SIZE + 1) * (2 * NEIGHBORHOOD_SIZE + 1);
 
 		// Structure to hold problem size parameters.
 		struct hbma_problem_size {
@@ -25,6 +19,7 @@ namespace ops::cuda::hbma {
 			int block_counts_height[HBMA_MAX_LEVELS];
 			int block_counts_width[HBMA_MAX_LEVELS];
 			int neighborhood_sizes[HBMA_MAX_LEVELS];
+			int neighborhood_including_self_size[HBMA_MAX_LEVELS];
 			bool is_valid;
 		};
 	}
@@ -43,28 +38,29 @@ namespace ops::cuda::hbma {
 		const int H = (int) target_frame.size(2);
 		const int W = (int) target_frame.size(3);
 
-		const int HBMA_BLOCK_COUNT_HEIGHT = H / block_size_height;
-		const int HBMA_BLOCK_COUNT_WIDTH = W / block_size_width;
+		const int block_count_height = H / block_size_height;
+		const int block_count_width = W / block_size_width;
 
 		bool valid_problem_size = (
 			// Input Sizes
 			H % block_size_height == 0 && 
 			W % block_size_width == 0 &&
-			HBMA_BLOCK_COUNT_HEIGHT > 0 &&
-			HBMA_BLOCK_COUNT_WIDTH > 0 &&
-			// TODO: Remove these restriction in future, or implement kernel emitting (or JIT)
-			C == INPUT_CHANNELS && 
-			block_size_height == BLOCK_SIZE_HEIGHT &&
-			block_size_width == BLOCK_SIZE_WIDTH &&
-			neighborhood_size == NEIGHBORHOOD_SIZE
+			block_count_height > 0 &&
+			block_count_width > 0 &&
+			// TODO: Remove restriction in future. Implement kernel emitting (or JIT), or just live with the fact we might not be able to unroll certain loops
+			C == INPUT_CHANNELS 
 		);
 
-		hbma_problem_size problem_size = {
+		const hbma_problem_size problem_size = {
 			levels,
 			C, H, W,
 			{block_size_height}, {block_size_width},
-			{HBMA_BLOCK_COUNT_HEIGHT}, {HBMA_BLOCK_COUNT_WIDTH},
+			{block_count_height}, {block_count_width},
 			{neighborhood_size},
+			// For each pixel block, compute the costs of all blocks in the search window around it
+			// This is the total number of neighbors around each block including itself
+			// NOTE: You need to do bounds checking, because blocks near edges will have fewer neighbors
+			{(2 * neighborhood_size + 1) * (2 * neighborhood_size + 1)},
 			valid_problem_size
 		};
 
@@ -93,8 +89,8 @@ namespace ops::cuda::hbma {
 		int block_idx_w = blockIdx.x;  // horizontal block index
 	
 		// Neighborhood offset: derive from blockIdx.z
-		int offset_idx_h = (blockIdx.z / (2 * NEIGHBORHOOD_SIZE + 1)) - NEIGHBORHOOD_SIZE;
-		int offset_idx_w = (blockIdx.z % (2 * NEIGHBORHOOD_SIZE + 1)) - NEIGHBORHOOD_SIZE;
+		int offset_idx_h = (blockIdx.z / (2 * neighborhood_size + 1)) - neighborhood_size;
+		int offset_idx_w = (blockIdx.z % (2 * neighborhood_size + 1)) - neighborhood_size;
 		int neighbor_block_idx_h = block_idx_h + offset_idx_h;
 		int neighbor_block_idx_w = block_idx_w + offset_idx_w;
 		
@@ -105,10 +101,10 @@ namespace ops::cuda::hbma {
 		}
 	
 		// Compute starting pixel coordinates for the anchor and neighbor blocks.
-		int anchor_block_start_h = block_idx_h * BLOCK_SIZE_HEIGHT;
-		int anchor_block_start_w = block_idx_w * BLOCK_SIZE_WIDTH;
-		int neighbor_block_start_h = neighbor_block_idx_h * BLOCK_SIZE_HEIGHT;
-		int neighbor_block_start_w = neighbor_block_idx_w * BLOCK_SIZE_WIDTH;
+		int anchor_block_start_h = block_idx_h * block_size_height;
+		int anchor_block_start_w = block_idx_w * block_size_width;
+		int neighbor_block_start_h = neighbor_block_idx_h * block_size_height;
+		int neighbor_block_start_w = neighbor_block_idx_w * block_size_width;
 	
 		// Global pixel coordinates for this thread within the block.
 		int thread_anchor_pixel_idx_h = anchor_block_start_h + threadIdx.y;
@@ -117,9 +113,10 @@ namespace ops::cuda::hbma {
 		int thread_neighbor_pixel_idx_w = neighbor_block_start_w + threadIdx.x;
 		
 		// Threadblock shared memory for cost accumulation
-		__shared__ float cost_cache[BLOCK_SIZE_HEIGHT][BLOCK_SIZE_WIDTH];
+		// NOTE: This may be smaller or bigger than the block size - configure this at some point if we need larger sizes
+		__shared__ float cost_cache[32][32];
 	
-		// Compute per-thread cost (MSE) for this pixel over all channels.
+		// Compute per-thread cost (sum-squared differences) across channels
 		float thread_cost = 0.0f;
 		#pragma unroll
 		for (int c = 0; c < INPUT_CHANNELS; c++) {
@@ -135,14 +132,12 @@ namespace ops::cuda::hbma {
 		// Thread (0,0) performs reduction over the block.
 		if (threadIdx.x + threadIdx.y == 0) {
 			float total_cost = 0.0f;
-			#pragma unroll
-			for (int i = 0; i < BLOCK_SIZE_HEIGHT; i++) {
-				#pragma unroll
-				for (int j = 0; j < BLOCK_SIZE_WIDTH; j++) {
+			for (int i = 0; i < block_size_height; i++) {
+				for (int j = 0; j < block_size_width; j++) {
 					total_cost += cost_cache[i][j];
 				}
 			}
-			// Write the computed cost to the output tensor.
+			// Write the computed cost to the output tensor
 			neighborhood_block_costs[0][blockIdx.y][blockIdx.x][blockIdx.z] = total_cost;
 		}
 	}
@@ -241,8 +236,15 @@ namespace ops::cuda::hbma {
 		// Allocate output and intermediate Tensors
 		torch::Tensor reconstructed_frame = torch::empty_like(target_frame);		
 		torch::Tensor neighborhood_block_costs = torch::full(
-			{1, problem_size.block_counts_height[0], problem_size.block_counts_width[0], NEIGHBORHOOD_INCLUDING_SELF_SIZE},
-			1e10f, // Initialize to a large value. Necessary for compute block cost kernel
+			{
+				(int) anchor_frame.size(0), 
+				problem_size.block_counts_height[0], 
+				problem_size.block_counts_width[0], 
+				problem_size.neighborhood_including_self_size[0]
+			},
+			// Initialize values to 1e9f (or a large value) - this behavior is required for block cost computation
+			1e9f, 
+			// Make sure this new tensor is on the same device as the target frame, and has the right data type
 			torch::TensorOptions().dtype(torch::kFloat32).device(target_frame.device())
 		);
 
@@ -255,12 +257,21 @@ namespace ops::cuda::hbma {
 		dim3 neighborhood_cost_grid(
 			problem_size.block_counts_width[0], 
 			problem_size.block_counts_height[0], 
-			NEIGHBORHOOD_INCLUDING_SELF_SIZE
+			problem_size.neighborhood_including_self_size[0]
 		);
 
-		//
+		dim3 reconstruct_threads(
+			problem_size.block_size_width[0], 
+			problem_size.block_size_height[0]
+		);
+
+		// One grid block per image block
+		dim3 reconstruct_grid(
+			problem_size.block_counts_width[0], 
+			problem_size.block_counts_height[0]
+		);
+
 		// Step 1: Get block costs
-		//
 		_hbma_compute_block_cost_kernel<<<neighborhood_cost_grid, neighborhood_cost_threads>>>(  
 			anchor_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			target_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
@@ -271,38 +282,12 @@ namespace ops::cuda::hbma {
 			problem_size.block_counts_height[0], problem_size.block_counts_width[0],
 			problem_size.neighborhood_sizes[0]
 		);
+		CUDA_LAUNCH_AND_EXECUTE_CHECK();
 
-		// Check for kernel launch + runtime errors
-		cudaError_t err = cudaGetLastError();
-		if (err != cudaSuccess) {
-			throw std::runtime_error(std::string("CUDA kernel launch failed: ") + cudaGetErrorString(err));
-		}
-		err = cudaDeviceSynchronize();
-		if (err != cudaSuccess) {
-			throw std::runtime_error(std::string("CUDA kernel execution failed: ") + cudaGetErrorString(err));
-		}
+		// Step 2: Compute the argmin along the last dimension dim=3 (neighborhood cost dimension, this will yield the best matching index)
+		torch::Tensor lowest_cost_neighborhood_block_indices = std::get<1>(torch::min(neighborhood_block_costs, 3));
 
-		//
-		// Step 2: Argmin of neighborhood_block_costs to get the best matching block
-		// 
-		// Compute the argmin along the last dimension (neighborhood cost dimension, this will yield the best matching index)
-		torch::Tensor lowest_cost_neighborhood_block_indices = std::get<1>(torch::min(neighborhood_block_costs, /*dim=*/3));
-
-		//
 		// Step 3: Compute motion vectors
-		//
-		// For reconstruction, use one thread per pixel in each block.
-		dim3 reconstruct_threads(
-			BLOCK_SIZE_WIDTH, 
-			BLOCK_SIZE_HEIGHT
-		);
-
-		// One grid block per image block.
-		dim3 reconstruct_grid(
-			problem_size.block_counts_width[0], 
-			problem_size.block_counts_height[0]
-		);
-
 		_hbma_compute_reconstructed_frame_kernel<<<reconstruct_grid, reconstruct_threads>>>(
 			anchor_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			lowest_cost_neighborhood_block_indices.packed_accessor64<long long, 3, torch::RestrictPtrTraits>(),
@@ -313,16 +298,7 @@ namespace ops::cuda::hbma {
 			problem_size.block_counts_height[0], problem_size.block_counts_width[0],
 			problem_size.neighborhood_sizes[0]
 		);
-
-		// Check for kernel launch + runtime errors
-		err = cudaGetLastError();
-		if (err != cudaSuccess) {
-			throw std::runtime_error(std::string("CUDA kernel launch failed: ") + cudaGetErrorString(err));
-		}
-		err = cudaDeviceSynchronize();
-		if (err != cudaSuccess) {
-			throw std::runtime_error(std::string("CUDA kernel execution failed: ") + cudaGetErrorString(err));
-		}
+		CUDA_LAUNCH_AND_EXECUTE_CHECK();
 
 		return reconstructed_frame;
 	}
