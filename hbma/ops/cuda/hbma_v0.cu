@@ -2,7 +2,7 @@
 #include "hbma.cuh"
 #include "cuda_helpers.cuh"
 
-namespace ops::cuda::hbma {
+namespace ops::cuda::hbma::v0 {
 	namespace {
 		// Constant expressions
 		constexpr int HBMA_MAX_LEVELS = 1;

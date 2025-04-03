@@ -32,6 +32,7 @@ def main(args: argparse.Namespace) -> None:
 
 	### Fused CUDA HBMA (Method)
 	fused_cuda_hbma = HBMA_CUDA_Fused(
+		version="v0",
 		levels=1,
 		block_size=(8, 8),
 		block_max_neighbor_search_distance=1,
@@ -44,7 +45,7 @@ def main(args: argparse.Namespace) -> None:
 	_, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
 	print(f"Predicted Shape: {predicted_frame.shape}")
 	torchvision.utils.save_image( anchor_tensor.squeeze(0), os.path.join(args.output_dir, "cost_debug_anchor.png"))
-	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "cost_debug_predicted.png"))
+	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, f"cost_debug_predicted_{fused_cuda_hbma.version}.png"))
 
 
 if __name__ == "__main__":
