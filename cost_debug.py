@@ -15,7 +15,6 @@ def main(args: argparse.Namespace) -> None:
 	W = 224
 
 	### Initialize transforms
-	### Point is to standardize the input size
 	transform = torchvision.transforms.Compose([
 		torchvision.transforms.ToTensor(),
 		torchvision.transforms.CenterCrop((H_CROP, W_CROP)),
@@ -38,9 +37,6 @@ def main(args: argparse.Namespace) -> None:
 		block_max_neighbor_search_distance=1,
 		input_image_size=(H, W)
 	)
-	# _, ssd_costs = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
-	# print(f"SSD Cost Shape: {ssd_costs.shape}")
-	# print(f"SSD Cost Index: {ssd_costs}")
 
 	_, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
 	print(f"Predicted Shape: {predicted_frame.shape}")

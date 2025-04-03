@@ -72,13 +72,14 @@ def main(args: argparse.Namespace) -> None:
 
 	### Fused CUDA HBMA (Method)
 	fused_cuda_hbma = HBMA_CUDA_Fused(
+		version="v0",
 		levels=1,
 		block_size=(8, 8),
 		block_max_neighbor_search_distance=1,
 		input_image_size=(H, W)
 	)
 	_, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
-	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "fused_cuda_hbma_predicted.png"))
+	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, f"fused_cuda_{fused_cuda_hbma.version}_hbma_predicted.png"))
 
 	###
 	### Timing Info

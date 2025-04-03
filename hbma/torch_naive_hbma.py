@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import *
-from .utils import loss_MAD, loss_MSE
+from .utils import loss_MAD, loss_MSE, loss_SSD
 
 ###
 ### Baseline HBMA Implementation that uses eager (or compiled) PyTorch
@@ -55,18 +55,18 @@ class HBMA_Naive(nn.Module):
 	### Output: Cost (MAD) [N, 1]
 	def compute_block_cost(
 		self,
-		reference_frame: torch.Tensor,
+		anchor_frame: torch.Tensor,
 		target_frame: torch.Tensor,
-		block_reference_indices: Tuple[int, int],
+		block_anchor_indices: Tuple[int, int],
 		block_target_indices: Tuple[int, int],
 		level: int
 	) -> torch.Tensor:
 		### Get block from reference frame
-		block_reference = reference_frame[
+		block_anchor = anchor_frame[
 			:,
 			:,
-			block_reference_indices[0] * self.block_size[level][0] : (block_reference_indices[0] + 1) * self.block_size[level][0],
-			block_reference_indices[1] * self.block_size[level][1] : (block_reference_indices[1] + 1) * self.block_size[level][1]
+			block_anchor_indices[0] * self.block_size[level][0] : (block_anchor_indices[0] + 1) * self.block_size[level][0],
+			block_anchor_indices[1] * self.block_size[level][1] : (block_anchor_indices[1] + 1) * self.block_size[level][1]
 		]
 		### Get block from target frame
 		block_target = target_frame[
@@ -77,23 +77,22 @@ class HBMA_Naive(nn.Module):
 		]
 
 		### Compute cost metric
-		# return loss_MAD(block_reference, block_target)
-		return loss_MSE(block_reference, block_target)
+		return loss_SSD(block_anchor, block_target)
 	
 	### Input: Frames [N=1, C, H, W] 4D tensor
 	### Output: Motion Vectors [N, 2, num_blocks_x, num_blocks_y] and predicted frame [N, C, H, W]
 	def forward(
 		self,
-		reference_frame: torch.Tensor,
+		anchor_frame: torch.Tensor,
 		target_frame: torch.Tensor,
 	) -> Tuple[torch.Tensor, torch.Tensor]:
 		### Check if the input frames are of the same size
-		assert(reference_frame.size() == target_frame.size())
-		N, C, H, W = reference_frame.size()
+		assert(anchor_frame.size() == target_frame.size())
+		N, C, H, W = anchor_frame.size()
 
 		### Initialize motion vectors
-		motion_vectors = torch.zeros(size=(N, 2, *self.block_count[-1]), dtype=reference_frame.dtype, device=reference_frame.device)
-		predicted_frame = torch.zeros_like(target_frame, dtype=reference_frame.dtype, device=reference_frame.device)
+		motion_vectors = torch.zeros(size=(N, 2, *self.block_count[-1]), dtype=anchor_frame.dtype, device=anchor_frame.device)
+		predicted_frame = torch.zeros_like(target_frame, dtype=anchor_frame.dtype, device=anchor_frame.device)
 
 		# print(f"motion vector sizes: {motion_vectors.shape}")
 		# print(f"input image sizes: {self.input_image_size}")
@@ -122,12 +121,17 @@ class HBMA_Naive(nn.Module):
 					### Iterate over neighbors
 					for neighbor_block_x, neighbor_block_y in self.valid_neighbor_block_LUT[level][(block_x, block_y)]:
 						### Evaluate block and neighbor block via MAD
-						cost = self.compute_block_cost(
-							reference_frame, 
-							target_frame, 
-							(block_x, block_y),
-							(neighbor_block_x, neighbor_block_y),
-							level
+						cost = loss_SSD(
+							target_frame[
+								:, :, 
+								neighbor_block_x * self.block_size[level][0] : (neighbor_block_x+1) * self.block_size[level][0],
+								neighbor_block_y * self.block_size[level][1]  : (neighbor_block_y+1) * self.block_size[level][1]
+							],
+							anchor_frame[
+								:, :,
+								block_x * self.block_size[level][0] : (block_x+1) * self.block_size[level][0],
+								block_y * self.block_size[level][1]  : (block_y+1) * self.block_size[level][1]
+							],
 						)
 
 						### Update running best match
@@ -147,11 +151,11 @@ class HBMA_Naive(nn.Module):
 							:,
 							pixel_x : pixel_x + self.block_size[level][0],
 							pixel_y : pixel_y + self.block_size[level][1]
-						] = target_frame[
+						] = anchor_frame[
 							:,
 							:,
-							lowest_cost_neighbor_indices[0] * self.block_size[level][0] : (lowest_cost_neighbor_indices[0] + 1) * self.block_size[level][0],
-							lowest_cost_neighbor_indices[1] * self.block_size[level][1] : (lowest_cost_neighbor_indices[1] + 1) * self.block_size[level][1]
+							lowest_cost_neighbor_indices[0] * self.block_size[level][0] : (lowest_cost_neighbor_indices[0]+1)*self.block_size[level][0],
+							lowest_cost_neighbor_indices[1] * self.block_size[level][1]  : (lowest_cost_neighbor_indices[1]+1)*self.block_size[level][1]
 						]
 					### If this isn't the final level, we want to update valid neighbor indices to look at based on the identified lowset cost neighbor
 					else:

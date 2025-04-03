@@ -12,22 +12,31 @@ def loss_MAD(
 ) -> torch.Tensor:
 	return torch.abs(reference - target).mean(dim=(1, 2, 3)).unsqueeze(1)
 
+
 ### Mean Squared Error (MSE) loss
-### Tensor shapes should be [N, C, H, W]
 def loss_MSE(
 	reference: torch.Tensor,
 	target: torch.Tensor,
 ) -> torch.Tensor:
-	return torch.mean( torch.pow(reference - target, 2), dim=(1, 2, 3)).unsqueeze(1)
+	return torch.pow(reference - target, 2).mean(dim=(1, 2, 3)).unsqueeze(1)
+
+
+### Sum of Squared Differences
+def loss_SSD(
+	reference: torch.Tensor,
+	target: torch.Tensor,
+) -> torch.Tensor:
+	return torch.sum( torch.pow(reference - target, 2), dim=(1, 2, 3)).unsqueeze(1)
+
 
 ### Peak Signal-to-Noise Ratio (PSNR) loss
-### Tensor shapes should be [N, C, H, W]
 def loss_PSNR(
 	reference: torch.Tensor,
 	target: torch.Tensor,
 	maximum_value: float = 1.0,
 ) -> torch.Tensor:
 	return 20.0*torch.log10( torch.tensor(data=maximum_value, device=reference.device) ) - 10.0*torch.log10(loss_MSE(reference, target))	
+
 
 ###
 ### Plotting Utils
@@ -52,6 +61,7 @@ def plot_image_difference(predicted_frame: torch.Tensor, reference_frame: torch.
 	plt.colorbar()
 
 	return figure
+
 
 def plot_motion_field(motion_vector: torch.Tensor):	
 	### Convert to numpy for plotting
