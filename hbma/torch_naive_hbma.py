@@ -172,3 +172,106 @@ class HBMA_Naive(nn.Module):
 
 		return motion_vectors, predicted_frame
 
+###
+### Optimized HBMA, single-level. Name is a bit of a misnomer
+### TODO: Add another level
+###
+class HBMA_Optimized(nn.Module):
+	def __init__(
+		self,
+		levels: int,
+		block_size: Tuple[int, int],
+		block_max_neighbor_search_distance: int,
+		input_image_size: Tuple[int, int],
+	):
+		"""
+		Simplified single-level, single-scale block matching.
+		"""
+		super().__init__()
+		assert input_image_size[0] % block_size[0] == 0
+		assert input_image_size[1] % block_size[1] == 0
+		assert levels == 1
+
+		self.input_image_size = input_image_size
+		self.block_size = block_size
+		self.block_count = (
+			input_image_size[0] // block_size[0],
+			input_image_size[1] // block_size[1],
+		)
+		self.search_dist = block_max_neighbor_search_distance
+
+	def forward(
+		self,
+		anchor_frame: torch.Tensor,  # [N, C, H, W]
+		target_frame: torch.Tensor,  # [N, C, H, W]
+	) -> torch.Tensor:
+		"""
+		Returns a reconstructed frame [N, C, H, W] by picking the best block
+		from anchor_frame for each block in the target_frame search region.
+		The cost is sum of squared differences over all channels/pixels.
+		"""
+		N, C, H, W = anchor_frame.shape
+		out_frame = torch.empty_like(anchor_frame)
+
+		block_h, block_w = self.block_size
+		blocks_h, blocks_w = self.block_count
+
+		# Loop over each block in block coordinates
+		for by in range(blocks_h):
+			for bx in range(blocks_w):
+				# Convert block coords -> pixel coords
+				anchor_block_y = by * block_h
+				anchor_block_x = bx * block_w
+
+				# Slice out the "current" block from anchor
+				# We'll compare it with neighbor blocks from target
+				anchor_block = anchor_frame[
+					:,
+					:,
+					anchor_block_y : anchor_block_y + block_h,
+					anchor_block_x : anchor_block_x + block_w,
+				]
+
+				best_cost = float("inf")
+				best_neighbor = (by, bx)
+
+				# Loop over neighbor offsets in block space
+				for dy in range(-self.search_dist, self.search_dist + 1):
+					for dx in range(-self.search_dist, self.search_dist + 1):
+						ny = by + dy
+						nx = bx + dx
+						# Bound check
+						if ny < 0 or ny >= blocks_h or nx < 0 or nx >= blocks_w:
+							continue
+						# Pixel coords for the neighbor block in target
+						target_block_y = ny * block_h
+						target_block_x = nx * block_w
+						target_block = target_frame[
+							:,
+							:,
+							target_block_y : target_block_y + block_h,
+							target_block_x : target_block_x + block_w,
+						]
+
+						cost = loss_SSD(anchor_block, target_block)
+						if cost < best_cost:
+							best_cost = cost
+							best_neighbor = (ny, nx)
+
+				# Copy the best block from anchor_frame into out_frame
+				best_ny, best_nx = best_neighbor
+				best_block_y = best_ny * block_h
+				best_block_x = best_nx * block_w
+				out_frame[
+					:,
+					:,
+					anchor_block_y : anchor_block_y + block_h,
+					anchor_block_x : anchor_block_x + block_w,
+				] = anchor_frame[
+					:,
+					:,
+					best_block_y : best_block_y + block_h,
+					best_block_x : best_block_x + block_w,
+				]
+
+		return out_frame

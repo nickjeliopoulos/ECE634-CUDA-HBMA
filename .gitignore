@@ -175,6 +175,7 @@ cython_debug/
 *.md
 *.txt
 .vscode/
+*nsight_profile_script.py
 
 # PyPI configuration file
 .pypirc

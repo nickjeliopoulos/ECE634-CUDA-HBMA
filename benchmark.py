@@ -6,7 +6,7 @@ import argparse
 from PIL import Image
 from typing import *
 import matplotlib.pyplot as plt
-from hbma.torch_naive_hbma import HBMA_Naive
+from hbma.torch_naive_hbma import HBMA_Naive, HBMA_Optimized
 from hbma.torch_fused_cuda_hbma import HBMA_CUDA_Fused
 from hbma.utils import loss_PSNR
 import os
@@ -14,6 +14,7 @@ import pandas
 
 ### Benchmark Function
 ### Adapted from https://github.com/pjjajal/nutils/blob/main/nutils/benchmark.py
+@torch.inference_mode()
 def benchmark_N_iterations(
 	N: int,
 	f: Callable,
@@ -55,7 +56,7 @@ def main(args: argparse.Namespace) -> None:
 	anchor_tensor = transform(anchor_image).unsqueeze(0).contiguous()
 	target_tensor = transform(target_image).unsqueeze(0).contiguous()
 
-	### Torch CPU HBMA (Baseline #1)
+	### Torch CPU HBMA (Baseline)
 	naive_torch_cpu_hbma = HBMA_Naive(
 		levels=LEVELS,
 		block_size=BLOCK_SIZE,
@@ -63,7 +64,25 @@ def main(args: argparse.Namespace) -> None:
 		input_image_size=(H, W)
 	)
 
-	### Torch CUDA HBMA (Baseline #2)
+	### Torch Optimized CPU HBMA (Baseline)
+	optimized_torch_cpu_hbma = HBMA_Optimized(
+		levels=LEVELS,
+		block_size=BLOCK_SIZE,
+		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
+		input_image_size=(H, W)
+	)
+
+	### Torch Optimized CUDA HBMA (Baseline)
+	optimized_torch_cuda_hbma = HBMA_Optimized(
+		levels=LEVELS,
+		block_size=BLOCK_SIZE,
+		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
+		input_image_size=(H, W)
+	).to("cuda:0")
+	predicted_frame = optimized_torch_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
+	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "optimized_torch_hbma_predicted.png"))
+
+	### Torch CUDA HBMA (Baseline)
 	naive_torch_cuda_hbma = HBMA_Naive(
 		levels=LEVELS,
 		block_size=BLOCK_SIZE,
@@ -71,7 +90,7 @@ def main(args: argparse.Namespace) -> None:
 		input_image_size=(H, W)
 	).to("cuda:0")
 	_, predicted_frame = naive_torch_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
-	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "naive_hbma_predicted.png"))
+	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "naive_torch_hbma_predicted.png"))
 
 	### Fused CUDA HBMA (Method)
 	fused_cuda_hbma = HBMA_CUDA_Fused(
@@ -92,9 +111,23 @@ def main(args: argparse.Namespace) -> None:
 		target_tensor,
 	)
 
+	optimized_torch_cpu_measurement = benchmark_N_iterations(
+		BENCHMARK_TRIAL_COUNT,
+		optimized_torch_cpu_hbma.forward,
+		anchor_tensor,
+		target_tensor,
+	)
+	
 	naive_torch_cuda_measurement = benchmark_N_iterations(
 		BENCHMARK_TRIAL_COUNT,
 		naive_torch_cuda_hbma.forward,
+		anchor_tensor.to("cuda:0"),
+		target_tensor.to("cuda:0"),
+	)
+
+	optimized_torch_cuda_measurement = benchmark_N_iterations(
+		BENCHMARK_TRIAL_COUNT,
+		optimized_torch_cuda_hbma.forward,
 		anchor_tensor.to("cuda:0"),
 		target_tensor.to("cuda:0"),
 	)
@@ -116,8 +149,9 @@ def main(args: argparse.Namespace) -> None:
 		"HBMA Max Neighbor Search Distance": [naive_torch_cpu_hbma.block_max_neighbor_search_distance],
 		"Naive Torch CPU Median Latency (ms)": [1e3 * naive_torch_cpu_measurement.median],
 		"Naive Torch GPU Median Latency (ms)": [1e3 * naive_torch_cuda_measurement.median],
+		"Optimized Torch CPU Median Latency (ms)": [1e3 * optimized_torch_cpu_measurement.median],
+		"Optimized Torch GPU Median Latency (ms)": [1e3 * optimized_torch_cuda_measurement.median],
 		"Fused CUDA HBMA Median Latency (ms)": [1e3 * fused_cuda_measurement.median],
-
 	}
 	
 	output_csv_path = os.path.join(args.output_dir, "benchmark_results.csv")
