@@ -35,10 +35,12 @@ def main(args: argparse.Namespace) -> None:
 	W_CROP = 256
 	H = 224
 	W = 224
-	BENCHMARK_TRIAL_COUNT = 2
+	BENCHMARK_TRIAL_COUNT = 16
+	LEVELS = 1
+	BLOCK_SIZE = (8, 8)
+	BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE = 1
 
 	### Initialize transforms
-	### Point is to standardize the input size
 	transform = torchvision.transforms.Compose([
 		torchvision.transforms.ToTensor(),
 		torchvision.transforms.CenterCrop((H_CROP, W_CROP)),
@@ -53,82 +55,79 @@ def main(args: argparse.Namespace) -> None:
 	anchor_tensor = transform(anchor_image).unsqueeze(0).contiguous()
 	target_tensor = transform(target_image).unsqueeze(0).contiguous()
 
-	# print(f"Anchor Tensor Shape: {anchor_tensor.shape}")
-	# print(f"Target Tensor Shape: {target_tensor.shape}")
-
-	### Display images
 	### Torch CPU HBMA (Baseline #1)
 	naive_torch_cpu_hbma = HBMA_Naive(
-		levels=1,
-		block_size=(8, 8),
-		block_max_neighbor_search_distance=1,
+		levels=LEVELS,
+		block_size=BLOCK_SIZE,
+		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
 		input_image_size=(H, W)
 	)
 
 	### Torch CUDA HBMA (Baseline #2)
-	naive_torch_cuda_hbma = naive_torch_cpu_hbma.to("cuda:0")
+	naive_torch_cuda_hbma = HBMA_Naive(
+		levels=LEVELS,
+		block_size=BLOCK_SIZE,
+		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
+		input_image_size=(H, W)
+	).to("cuda:0")
 	_, predicted_frame = naive_torch_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
 	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "naive_hbma_predicted.png"))
 
 	### Fused CUDA HBMA (Method)
 	fused_cuda_hbma = HBMA_CUDA_Fused(
 		version="v0",
-		levels=1,
-		block_size=(8, 8),
-		block_max_neighbor_search_distance=1,
+		levels=LEVELS,
+		block_size=BLOCK_SIZE,
+		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
 		input_image_size=(H, W)
 	)
 	_, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
 	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, f"fused_cuda_{fused_cuda_hbma.version}_hbma_predicted.png"))
 
-	###
 	### Timing Info
-	###
-	# naive_torch_cpu_measurement = benchmark_N_iterations(
-	# 	BENCHMARK_TRIAL_COUNT,
-	# 	naive_torch_cpu_hbma.forward,
-	# 	anchor_tensor,
-	# 	target_tensor,
-	# )
+	naive_torch_cpu_measurement = benchmark_N_iterations(
+		BENCHMARK_TRIAL_COUNT,
+		naive_torch_cpu_hbma.forward,
+		anchor_tensor,
+		target_tensor,
+	)
 
-	# naive_torch_gpu_measurement = benchmark_N_iterations(
-	# 	BENCHMARK_TRIAL_COUNT,
-	# 	naive_torch_cpu_hbma.forward,
-	# 	anchor_tensor,
-	# 	target_tensor,
-	# )
+	naive_torch_cuda_measurement = benchmark_N_iterations(
+		BENCHMARK_TRIAL_COUNT,
+		naive_torch_cuda_hbma.forward,
+		anchor_tensor.to("cuda:0"),
+		target_tensor.to("cuda:0"),
+	)
 
-	# fused_cuda_measurement = benchmark_N_iterations(
-	# 	BENCHMARK_TRIAL_COUNT,
-	# 	naive_torch_cpu_hbma.forward,
-	# 	anchor_tensor,
-	# 	target_tensor,
-	# )
+	fused_cuda_measurement = benchmark_N_iterations(
+		BENCHMARK_TRIAL_COUNT,
+		fused_cuda_hbma.forward,
+		anchor_tensor.to("cuda:0"),
+		target_tensor.to("cuda:0"),
+	)
 
-	# ###
-	# ### Benchmark Data handling
-	# ###
-	# report_data = {
-	# 	"Device Name": [torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'],
-	# 	"Image Size [B,C,H,W]": [tuple(anchor_tensor.shape)],
-	# 	"Benchmark Trial Count": [BENCHMARK_TRIAL_COUNT],
-	# 	"HBMA Levels": [naive_torch_cpu_hbma.levels],
-	# 	"HBMA Block Size": [tuple(naive_torch_cpu_hbma.block_size[0])],
-	# 	"HBMA Max Neighbor Search Distance": [naive_torch_cpu_hbma.block_max_neighbor_search_distance],
-	# 	"Naive Torch CPU Median Latency (ms)": [1e3 * naive_torch_cpu_measurement.median],
-	# 	"Naive Torch GPU Median Latency (ms)": [1e3 * naive_torch_gpu_measurement.median],
-	# 	"Fused CUDA HBMA Median Latency (ms)": [1e3 * fused_cuda_measurement.median],
+	### Benchmark Data handling
+	report_data = {
+		"Device Name": [torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'],
+		"Image Size [B,C,H,W]": [tuple(anchor_tensor.shape)],
+		"Benchmark Trial Count": [BENCHMARK_TRIAL_COUNT],
+		"HBMA Levels": [naive_torch_cpu_hbma.levels],
+		"HBMA Block Size": [tuple(naive_torch_cpu_hbma.block_size[0])],
+		"HBMA Max Neighbor Search Distance": [naive_torch_cpu_hbma.block_max_neighbor_search_distance],
+		"Naive Torch CPU Median Latency (ms)": [1e3 * naive_torch_cpu_measurement.median],
+		"Naive Torch GPU Median Latency (ms)": [1e3 * naive_torch_cuda_measurement.median],
+		"Fused CUDA HBMA Median Latency (ms)": [1e3 * fused_cuda_measurement.median],
 
-	# }
+	}
 	
-	# output_csv_path = os.path.join(args.output_dir, "benchmark_results.csv")
-	# output_md_path = os.path.join(args.output_dir, "benchmark_results.md")
-	# report_dataframe = pandas.DataFrame(report_data)
-	# report_dataframe.to_csv(output_csv_path, index=False, mode="w+")
-	# report_dataframe.to_markdown(output_md_path, index=False, mode="w+")
+	output_csv_path = os.path.join(args.output_dir, "benchmark_results.csv")
+	output_md_path = os.path.join(args.output_dir, "benchmark_results.md")
+	report_dataframe = pandas.DataFrame(report_data)
+	report_dataframe.to_csv(output_csv_path, index=False, mode="w+")
+	report_dataframe.to_markdown(output_md_path, index=False, mode="w+")
 
-	# ### Save dataframe to CSV
-	# print(f"Benchmark results saved to {output_csv_path} and {output_md_path}")
+	### Save dataframe to CSV
+	print(f"Benchmark results saved to {output_csv_path} and {output_md_path}")
 	
 if __name__ == "__main__":
 	### Load arguments
