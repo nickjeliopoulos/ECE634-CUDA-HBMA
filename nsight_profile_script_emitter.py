@@ -1,11 +1,42 @@
 import os
 import argparse
+from datetime import datetime
 
-def profile_script_filename_formatter(args: argparse.Namespace) -> str:
+# Update the manifest and profile script paths to be within the nsight folder
+def profile_script_filename_formatter() -> str:
 	"""
-	Generate a filename for the profile script based on the HBMA class name and version.
+	Generate a filename for the profile script based on the current datetime.
 	"""
-	return os.path.join("nsight/", "{}_{}_nsight_profile_script.py".format(args.hbma_class_name, args.version))
+	timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+	return os.path.join("nsight/", "nsight_profile_script_{}.py".format(timestamp))
+
+def update_manifest(script_filename: str, args: argparse.Namespace) -> None:
+	"""
+	Update a manifest .MD file to map the script filename to its corresponding workload sizes.
+	If the manifest file does not exist, it will be created.
+	"""
+	manifest_file = os.path.join("nsight/", "nsight_profile_manifest.md")
+	row_dict = {
+		"Script Filename": script_filename,
+		"Block Size": f"{args.block_size[0]}x{args.block_size[1]}",
+		"Neighborhood Size": args.neighborhood_size,
+		"Input Image Size": f"{args.input_image_size[0]}x{args.input_image_size[1]}",
+		"Levels": args.levels,
+		"Version": args.version,
+		"HBMA Class Name": args.hbma_class_name
+	}
+
+	# Check if the manifest file exists, and write headers if creating a new file
+	write_headers = not os.path.exists(manifest_file)
+	try:
+		with open(manifest_file, 'a+') as file:
+			if write_headers:
+				file.write("| " + " | ".join(row_dict.keys()) + " |\n")
+				file.write("|" + " --- |" * len(row_dict.keys()) + "\n")
+			file.write("| " + " | ".join(map(str, row_dict.values())) + " |\n")
+	except OSError as e:
+		print(f"OS error: {e}")
+		exit(1)
 
 def get_import_code() -> str:
 	"""
@@ -17,7 +48,7 @@ def get_module_init_code(args: argparse.Namespace) -> str:
 	"""
 	Generate a string that contains the problem size constants for the HBMA operator.
 	"""
-	_parameter_string = "module = {}(version={}, levels={}, block_size=({},{}), block_max_neighbor_search_distance={}, input_image_size=({}, {})).to(\"cuda:0\")\n"
+	_parameter_string = "module = {}(version=\"{}\", levels={}, block_size=({},{}), block_max_neighbor_search_distance={}, input_image_size=({}, {})).to(\"cuda:0\")\n"
 
 	return _parameter_string.format(
 		args.hbma_class_name,
@@ -30,14 +61,26 @@ def get_module_init_code(args: argparse.Namespace) -> str:
 		args.input_image_size[1]
 	)
 
+def get_input_tensor_init_code(args: argparse.Namespace) -> str:
+	"""
+	Generate a string that contains the input tensor initialization code for the HBMA operator.
+	"""
+	return "anchor_tensor = torch.randn(size=(1, 3, {}, {}), device=\"cuda:0\")\ntarget_tensor = torch.randn(size=(1, 3, {}, {}), device=\"cuda:0\")\n".format(
+		args.input_image_size[0],
+		args.input_image_size[1],
+		args.input_image_size[0],
+		args.input_image_size[1]
+	)
+
+# Modify the emit function to call update_manifest
 def emit(args: argparse.Namespace) -> None:
 	"""
-	Emit a benchmark script that invokes an HBMA operator. 
-	The emitted script can be easily used with NSight Compute/Systems for profiling.
+	Emit a benchmark script that invokes an HBMA operator and update the manifest file.
 	"""
 	hbma_import_code = get_import_code()
 	hbma_module_init_code = get_module_init_code(args)
-	script_filename = profile_script_filename_formatter(args)
+	hbma_input_init_code = get_input_tensor_init_code(args)
+	script_filename = profile_script_filename_formatter()
 
 	code = ""
 	code += "### Profiling script for HBMA operator\n"
@@ -48,16 +91,20 @@ def emit(args: argparse.Namespace) -> None:
 	code += "### Initialize HBMA Module\n"
 	code += hbma_module_init_code
 	code += "\n"
+	code += "### Initialize Input Tensors\n"
+	code += hbma_input_init_code
+	code += "\n"
+	code += "### Invoke HBMA Module\n"
+	code += "motion, predicted_frame_tensor = module(anchor_tensor, target_tensor)\n"
+	code += "\n"
 
 	try:
 		with open(script_filename, "w") as f:
 			f.write(code)
-	except FileNotFoundError as e:
-		print(f"File not found error: {e}")
-	except PermissionError as e:
-		print(f"Permission error: {e}")
+		update_manifest(script_filename, args)
 	except OSError as e:
 		print(f"OS error: {e}")
+		exit(1)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="HBMA Profiling Script Emitter")
