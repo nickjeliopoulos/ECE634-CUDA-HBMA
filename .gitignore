@@ -175,7 +175,7 @@ cython_debug/
 *.md
 *.txt
 .vscode/
-*nsight_profile_script.py
+nsight/
 
 # PyPI configuration file
 .pypirc
@@ -184,3 +184,4 @@ cython_debug/
 !README.md
 !images/akiyo0000.jpg
 !images/akiyo0028.jpg
+!*.gitkeep

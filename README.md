@@ -23,9 +23,20 @@ python setup.py develop
 > [!CAUTION]
 > To best reproduce latency measurements, we encourage users to lock the clock and/or memory rates of their device.
 
-## benchmark.py
+## `benchmark.py`
+This script is for identifying numerical correctness / equivalence, and latency of our approach and baseline appraoches.
 ```bash
 python benchmark.py --anchor-image-path im1k_0.jpg --target-image-path im1k_8.jpg
+```
+
+## `nsight_profile_script_emitter.py`
+In order to profile in a fine-grained manner with NVIDIA tools such as NSightCompute, we emit minimal scripts based on some problem size configuration. This allows us to avoid writing a massive script that handles all our test suites. Additionally, isolating computational bottlenecks becomes easy by ensuring only the bare minimum operations are being run to test a particular configuration.
+```bash
+python nsight_profile_script_emitter.py --hbma-class-name HBMA_CUDA_Fused
+```
+If you want to run or verify whether the emitted script works, you must invoke the script with the module syntax:
+```bash
+python -m nsight.[script_name]
 ```
 
 # Project Goals and Deliverables
