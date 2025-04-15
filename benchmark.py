@@ -36,10 +36,11 @@ def main(args: argparse.Namespace) -> None:
 	W_CROP = 256
 	H = 224
 	W = 224
-	BENCHMARK_TRIAL_COUNT = 16
-	LEVELS = 1
-	BLOCK_SIZE = (8, 8)
-	BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE = 1
+	### Benchmarking parameters from args
+	BENCHMARK_TRIAL_COUNT = args.benchmark_trial_count
+	LEVELS = args.levels
+	BLOCK_SIZE = (args.block_size, args.block_size)
+	BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE = args.block_max_neighbor_search_distance
 
 	### Initialize transforms
 	transform = torchvision.transforms.Compose([
@@ -154,23 +155,35 @@ def main(args: argparse.Namespace) -> None:
 		"Fused CUDA HBMA Median Latency (ms)": [1e3 * fused_cuda_measurement.median],
 	}
 	
-	output_csv_path = os.path.join(args.output_dir, "benchmark_results.csv")
-	output_md_path = os.path.join(args.output_dir, "benchmark_results.md")
-	report_dataframe = pandas.DataFrame(report_data)
-	report_dataframe.to_csv(output_csv_path, index=False, mode="w+")
-	report_dataframe.to_markdown(output_md_path, index=False, mode="w+")
+	output_csv_path = os.path.join(
+		args.output_dir,
+		f"benchmark_results_levels{args.levels}_block{args.block_size}_distance{args.block_max_neighbor_search_distance}.csv"
+	)
+	output_md_path = os.path.join(
+		args.output_dir,
+		f"benchmark_results_levels{args.levels}_block{args.block_size}_distance{args.block_max_neighbor_search_distance}.md"
+	)
 
-	### Save dataframe to CSV
+	report_dataframe = pandas.DataFrame(report_data)
+	report_dataframe = report_dataframe.round(3)
+	report_dataframe.to_csv(output_csv_path, index=False)
+	report_dataframe.to_markdown(output_md_path, index=False)
+
 	print(f"Benchmark results saved to {output_csv_path} and {output_md_path}")
 	
 if __name__ == "__main__":
 	### Load arguments
 	parser = argparse.ArgumentParser(description="Benchmarking script")
-	parser.add_argument("--anchor-image-path", type=str, default="images/akiyo0000.jpg", required=False, help="Anchor (source) image path")
-	parser.add_argument("--target-image-path", type=str, default="images/akiyo0028.jpg", required=False, help="Target image path")
+	### Block Matching Args
+	parser.add_argument("--levels", type=int, default=1)
+	parser.add_argument("--block-size", type=int, default=8)
+	parser.add_argument("--block-max-neighbor-search-distance", type=int, default=1)
+	### Generic Args
+	parser.add_argument("--benchmark-trial-count", type=int, default=16)
+	parser.add_argument("--anchor-image-path", type=str, default="images/akiyo0000.jpg", help="Anchor (source) image path")
+	parser.add_argument("--target-image-path", type=str, default="images/akiyo0028.jpg", help="Target image path")
 	parser.add_argument("--output-dir", type=str, default="output/")
 	args = parser.parse_args()
 
 	### Run main function
 	main(args)
-
