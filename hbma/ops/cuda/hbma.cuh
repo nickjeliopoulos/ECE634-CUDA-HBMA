@@ -1,7 +1,8 @@
 #pragma once
 #include <torch/extension.h>
-#include <torch/library.h>
-#include <ATen/ATen.h>
+// #include <torch/library.h>
+// #include <ATen/ATen.h>
+#include <pybind11/pybind11.h>
 
 namespace ops::cuda::hbma {
 	namespace v0{
@@ -28,9 +29,13 @@ namespace ops::cuda::hbma {
 
     // Register the operators to PyTorch via PyBind11
 	#ifndef _HBMA_CUH_PYBIND_GUARD_
-		PYBIND11_MODULE(TORCH_EXTENSION_NAME, m){
-			m.def("hbma_v0", &v0::hbma_v0, "HBMA v0");
-			m.def("hbma_v1", &v1::hbma_v1, "HBMA v1");
-		}
+		// PYBIND11_MODULE(TORCH_EXTENSION_NAME, m){
+		// 	m.def("hbma_v0", &v0::hbma_v0, "HBMA v0");
+		// 	m.def("hbma_v1", &v1::hbma_v1, "HBMA v1");
+		// }
+		TORCH_LIBRARY_IMPL(extension_cpp, CUDA, m) {
+			m.impl("hbma_v0", &hbma_v0);
+			m.impl("hbma_v1", &hbma_v1);
+		  }
 	#endif
 }
