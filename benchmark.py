@@ -65,6 +65,14 @@ def main(args: argparse.Namespace) -> None:
 		input_image_size=(H, W)
 	)
 
+	### Torch CUDA HBMA (Baseline)
+	naive_torch_cuda_hbma = HBMA_Naive(
+		levels=LEVELS,
+		block_size=BLOCK_SIZE,
+		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
+		input_image_size=(H, W)
+	).to("cuda:0")
+
 	### Torch Optimized CPU HBMA (Baseline)
 	optimized_torch_cpu_hbma = HBMA_Optimized(
 		levels=LEVELS,
@@ -80,18 +88,7 @@ def main(args: argparse.Namespace) -> None:
 		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
 		input_image_size=(H, W)
 	).to("cuda:0")
-	predicted_frame = optimized_torch_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
-	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "optimized_torch_hbma_predicted.png"))
 
-	### Torch CUDA HBMA (Baseline)
-	naive_torch_cuda_hbma = HBMA_Naive(
-		levels=LEVELS,
-		block_size=BLOCK_SIZE,
-		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
-		input_image_size=(H, W)
-	).to("cuda:0")
-	_, predicted_frame = naive_torch_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
-	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "naive_torch_hbma_predicted.png"))
 
 	### Fused CUDA HBMA (Method)
 	fused_cuda_hbma = HBMA_CUDA_Fused(
@@ -101,8 +98,17 @@ def main(args: argparse.Namespace) -> None:
 		block_max_neighbor_search_distance=BLOCK_MAX_NEIGHBOR_SEARCH_DISTANCE,
 		input_image_size=(H, W)
 	)
-	_, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
-	torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, f"fused_cuda_{fused_cuda_hbma.version}_hbma_predicted.png"))
+
+	if not args.benchmark_only:
+		_, predicted_frame = fused_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
+		torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, f"fused_cuda_{fused_cuda_hbma.version}_hbma_predicted.png"))
+
+		predicted_frame = optimized_torch_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
+		torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "optimized_torch_hbma_predicted.png"))
+
+		_, predicted_frame = naive_torch_cuda_hbma(anchor_tensor.to("cuda:0"), target_tensor.to("cuda:0"))
+		torchvision.utils.save_image( predicted_frame.squeeze(0), os.path.join(args.output_dir, "naive_torch_hbma_predicted.png"))
+
 
 	### Timing Info
 	naive_torch_cpu_measurement = benchmark_N_iterations(
@@ -178,6 +184,8 @@ if __name__ == "__main__":
 	parser.add_argument("--levels", type=int, default=1)
 	parser.add_argument("--block-size", type=int, default=8)
 	parser.add_argument("--block-max-neighbor-search-distance", type=int, default=1)
+	### Benchmark only (no image dump, latency measurement only)
+	parser.add_argument("--benchmark-only", action="store_true", help="Benchmark only, no image dump")
 	### Generic Args
 	parser.add_argument("--benchmark-trial-count", type=int, default=16)
 	parser.add_argument("--anchor-image-path", type=str, default="images/akiyo0000.jpg", help="Anchor (source) image path")
