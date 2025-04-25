@@ -3,6 +3,15 @@
 #include <torch/library.h>
 #include <ATen/ATen.h>
 
+// Necessary to avoid an unsupported TensorAccessor error on Linux
+// when using long long instead of int64_t as the index type in the PackedTensorAccessor
+// NOTE: long long works on Windows just fine it seems
+#ifdef _WIN32
+using int64_torch_accessor_t = long long;
+#else
+using int64_torch_accessor_t = int64_t;
+#endif
+
 namespace ops::cuda::hbma {
 	namespace v0{
 		torch::Tensor hbma_v0(

@@ -147,7 +147,7 @@ namespace ops::cuda::hbma::v0 {
 		// Anchor frame: [N, C, H, W]
 		const torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> anchor_frame, 
 		// Best neighbor indices: [N, block_count_height, block_count_width]
-		const torch::PackedTensorAccessor64<long long, 3, torch::RestrictPtrTraits> neighborhood_block_cost_indices,
+		const torch::PackedTensorAccessor64<int64_torch_accessor_t, 3, torch::RestrictPtrTraits> neighborhood_block_cost_indices,
 		// Output reconstructed frame: [N, C, H, W]
 		torch::PackedTensorAccessor64<float, 4, torch::RestrictPtrTraits> reconstructed_frame,
 		const int level,
@@ -290,7 +290,7 @@ namespace ops::cuda::hbma::v0 {
 		// Step 3: Compute motion vectors
 		_hbma_compute_reconstructed_frame_kernel<<<reconstruct_grid, reconstruct_threads>>>(
 			anchor_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
-			lowest_cost_neighborhood_block_indices.packed_accessor64<long long, 3, torch::RestrictPtrTraits>(),
+			lowest_cost_neighborhood_block_indices.packed_accessor64<int64_torch_accessor_t, 3, torch::RestrictPtrTraits>(),
 			reconstructed_frame.packed_accessor64<float, 4, torch::RestrictPtrTraits>(),
 			problem_size.levels,
 			problem_size.image_channels, problem_size.image_height, problem_size.image_width,

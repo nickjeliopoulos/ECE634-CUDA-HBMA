@@ -3,4 +3,3 @@ torchvision
 pybind11
 numpy
 matplotlib
-seaborn
